@@ -6,6 +6,8 @@ for dataset browsing, chart viewing, and project management functionality.
 """
 from __future__ import annotations
 
+import platform
+import ctypes
 import json
 import sys
 import uuid
@@ -18,6 +20,7 @@ from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
                                QMainWindow, QMessageBox, QProgressBar,
                                QSplitter, QVBoxLayout, QWidget)
+import snpviewer.frontend.resources_rc  # noqa: F401
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.project import Project, Preferences, DatasetRef
@@ -89,13 +92,9 @@ class SnPViewerMainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         """Setup basic UI properties."""
         self.setWindowTitle("SnP Viewer")
+        self.setWindowIcon(QIcon(":/icons/snpviewer.ico"))
         self.setMinimumSize(1000, 700)
         self.resize(1400, 900)
-
-        # Set application icon if available
-        icon_path = Path(__file__).parent.parent / "resources" / "icons" / "app.png"
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
 
     def _setup_menus(self) -> None:
         """Setup the menu bar and actions."""
@@ -1643,6 +1642,17 @@ class SnPViewerMainWindow(QMainWindow):
             print(f"Error restoring traces: {e}")
 
 
+def show_taskbar_icon(app_id: str) -> None:
+    """
+    Show the taskbar icon for a Windows application.
+
+    Args:
+        app_id (str): The application ID to set for the taskbar icon.
+    """
+    if platform.system() == 'Windows':
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+
+
 def main():
     """Main application entry point."""
     app = QApplication(sys.argv)
@@ -1654,17 +1664,14 @@ def main():
     # Set application style
     app.setStyle("Fusion")
 
+    show_taskbar_icon("snpviewer.app.1")
+
     # Create and show main window
     window = SnPViewerMainWindow()
     window.show()
 
     # Run application
     sys.exit(app.exec())
-
-
-def run() -> None:
-    """Legacy entry point for compatibility."""
-    main()
 
 
 if __name__ == "__main__":
