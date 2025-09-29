@@ -1,0 +1,60 @@
+[project]
+name = "snpviewer"
+version = "1.0.0"
+description = "Professional RF Touchstone (.sNp) parameter viewer with advanced visualization and analysis capabilities"
+authors = [
+    { name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" },
+]
+maintainers = [
+    { name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" },
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+keywords = [
+    "rf",
+    "touchstone",
+    "s-parameters",
+    "network-analysis",
+    "smith-chart",
+    "visualization",
+    "measurement",
+    "gui",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Intended Audience :: Telecommunications Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Environment :: X11 Applications :: Qt",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "pyqtgraph>=0.13.0",
+    "pyside6>=6.6.0",
+]
+
+[project.scripts]
+snpviewer = "snpviewer.frontend.app:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I"]
+
+[build-system]
+requires = ["uv_build>=0.8.22,<0.9.0"]
+build-backend = "uv_build"
