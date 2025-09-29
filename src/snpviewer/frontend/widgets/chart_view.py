@@ -850,8 +850,9 @@ class ChartView(QWidget):
         )
 
         if file_path:
-            # Get the scene as a QPixmap
-            exporter = pg.exporters.ImageExporter(self._plot_item)
+            # Export the plot as an image using pyqtgraph's ImageExporter
+            from pyqtgraph.exporters import ImageExporter
+            exporter = ImageExporter(self._plot_item)
             exporter.export(file_path)
 
     def _export_data(self) -> None:

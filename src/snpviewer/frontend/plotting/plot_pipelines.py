@@ -185,8 +185,8 @@ def prepare_magnitude_data(trace: Trace, dataset, linear_scale: bool = False) ->
 
     # Create label with filename
     filename = getattr(dataset, 'file_name', 'Unknown')
-    param_label = f"{trace.domain}({trace.port_path.i},{trace.port_path.j})"
-    label = f"{filename}: {param_label} Magnitude"
+    param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
+    label = f"{filename}: {param_label}"
 
     return PlotData(
         x=freq,
@@ -223,8 +223,8 @@ def prepare_phase_data(trace: Trace, dataset, degrees: bool = True, unwrap: bool
 
     # Create label with filename
     filename = getattr(dataset, 'file_name', 'Unknown')
-    param_label = f"{trace.domain}({trace.port_path.i},{trace.port_path.j})"
-    label = f"{filename}: {param_label} Phase"
+    param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
+    label = f"{filename}: {param_label}"
 
     return PlotData(
         x=freq,
@@ -261,8 +261,8 @@ def prepare_group_delay_data(trace: Trace, dataset) -> PlotData:
 
     # Create label with filename
     filename = getattr(dataset, 'file_name', 'Unknown')
-    param_label = f"{trace.domain}({trace.port_path.i},{trace.port_path.j})"
-    label = f"{filename}: {param_label} Group Delay"
+    param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
+    label = f"{filename}: {param_label}"
 
     return PlotData(
         x=freq_gd,
@@ -307,8 +307,8 @@ def prepare_smith_data(trace: Trace, dataset, mode: str = 'Z') -> PlotData:
 
     # Create label with filename
     filename = getattr(dataset, 'file_name', 'Unknown')
-    param_label = f"{trace.domain}({trace.port_path.i},{trace.port_path.j})"
-    label = f"{filename}: {param_label} Smith Chart"
+    param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
+    label = f"{filename}: {param_label}"
 
     return PlotData(
         x=x_data,

@@ -65,21 +65,7 @@ cd SnPViewer
 uv sync
 
 # Run the application
-uv run python -m frontend.app
-```
-
-### Alternative Installation (pip)
-
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
-python -m frontend.app
+snpviewer
 ```
 
 ## 📖 Usage Guide
@@ -124,21 +110,6 @@ python -m frontend.app
 - **Package Management**: uv - Fast, modern Python package management
 - **Testing**: pytest - Comprehensive test coverage
 
-### Project Structure
-
-```
-SnPViewer/
-├── frontend/           # GUI components and user interface
-│   ├── widgets/       # Custom Qt widgets (ChartView, SmithView, etc.)
-│   ├── dialogs/       # Property dialogs and user interactions
-│   └── services/      # Background services and utilities
-├── backend/           # Data models and business logic
-│   ├── models/        # Data structures (Dataset, Chart, Project, etc.)
-│   └── parsing/       # Touchstone file parsing and conversion
-├── tests/             # Test suite
-└── specs/             # Development specifications and documentation
-```
-
 ## 🧪 Development
 
 ### Running Tests
@@ -146,9 +117,6 @@ SnPViewer/
 ```bash
 # Run all tests
 uv run pytest
-
-# Run with coverage
-uv run pytest --cov=backend --cov=frontend
 
 # Run specific test modules
 uv run pytest tests/test_parsing.py
@@ -238,7 +206,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/SnPViewer/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/SnPViewer/discussions)
-- **Email**: your.email@example.com
+- **Email**: yunchi.zhang@gmail.com
 
 ---
 

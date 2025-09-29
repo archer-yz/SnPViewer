@@ -94,7 +94,7 @@ class TraceSelectionDialog(QDialog):
 
             for i in range(n_ports):
                 port_pair = (i + 1, i + 1)
-                checkbox = QCheckBox(f"S{i+1}{i+1}")
+                checkbox = QCheckBox(f"S{i+1},{i+1}")
                 checkbox.setToolTip(f"Reflection parameter for port {i+1}")
                 self._checkboxes[port_pair] = checkbox
                 reflection_layout.addWidget(checkbox, i // 2, i % 2)
@@ -111,7 +111,7 @@ class TraceSelectionDialog(QDialog):
                 for j in range(n_ports):
                     if i != j:
                         port_pair = (i + 1, j + 1)
-                        checkbox = QCheckBox(f"S{i+1}{j+1}")
+                        checkbox = QCheckBox(f"S{i+1},{j+1}")
                         checkbox.setToolTip(f"Transmission from port {j+1} to port {i+1}")
                         self._checkboxes[port_pair] = checkbox
                         transmission_layout.addWidget(checkbox, row // 3, row % 3)
