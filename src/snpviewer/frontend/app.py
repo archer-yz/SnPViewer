@@ -18,8 +18,7 @@ from PySide6 import QtGui
 from PySide6.QtCore import QSettings, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
-                               QMainWindow, QMessageBox, QProgressBar,
-                               QWidget)
+                               QMainWindow, QMessageBox, QProgressBar, QWidget)
 
 import snpviewer.frontend.resources_rc  # noqa: F401
 from snpviewer.backend import parse_touchstone
@@ -287,6 +286,7 @@ class SnPViewerMainWindow(QMainWindow):
         dataset_browser.dataset_double_clicked.connect(self._on_dataset_double_clicked)
         dataset_browser.create_chart_requested.connect(self._on_create_chart_requested)
         dataset_browser.dataset_removed.connect(self._on_dataset_removed)
+        dataset_browser.dataset_renamed.connect(self._on_dataset_renamed)
 
         # Charts area signals
         charts_area = self._main_panels.charts_area
@@ -1005,6 +1005,33 @@ class SnPViewerMainWindow(QMainWindow):
                 msg = (f"Removed dataset '{user_friendly_name}': {traces_removed} trace(s) "
                        f"from {charts_affected} chart(s)")
             self.statusBar().showMessage(msg)
+
+    def _on_dataset_renamed(self, dataset_id: str, new_display_name: str) -> None:
+        """Handle dataset rename - update legends in all charts using this dataset."""
+        # Get the dataset object
+        dataset = self._main_panels.dataset_browser.get_dataset(dataset_id)
+        if not dataset:
+            return
+
+        # Update all charts that use this dataset
+        all_charts = self._main_panels.charts_area.get_all_charts()
+        charts_updated = 0
+
+        for chart_id, chart_info in all_charts.items():
+            widget = chart_info['widget']
+
+            # Check if this chart has traces from this dataset
+            if hasattr(widget, 'update_dataset_name'):
+                # For ChartView widgets, update the dataset name
+                if widget.update_dataset_name(dataset.id, new_display_name):
+                    charts_updated += 1
+
+        # Mark project as modified if charts were updated
+        if charts_updated > 0 and self._current_project:
+            self._set_modified(True)
+            self.statusBar().showMessage(
+                f"Renamed dataset to '{new_display_name}' and updated {charts_updated} chart(s)"
+            )
 
     def _on_project_loaded(self, project: Project) -> None:
         """Handle project loaded - restore UI state with datasets and charts."""

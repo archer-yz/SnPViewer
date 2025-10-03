@@ -745,6 +745,47 @@ class ChartView(QWidget):
 
         return len(traces_to_remove)
 
+    def update_dataset_name(self, dataset_id: str, new_name: str) -> bool:
+        """
+        Update the dataset name and refresh legend entries for traces from this dataset.
+
+        Args:
+            dataset_id: UUID of the dataset to update
+            new_name: New display name for the dataset
+
+        Returns:
+            True if any traces were updated, False otherwise
+        """
+        updated = False
+
+        # Update the dataset file_name for all traces from this dataset
+        for trace_id, dataset in self._datasets.items():
+            if dataset.id == dataset_id:
+                # Update the dataset's file_name
+                dataset.file_name = new_name
+
+                # Refresh the legend entry for this trace
+                if trace_id in self._plot_items and trace_id in self._traces:
+                    plot_item = self._plot_items[trace_id]
+                    trace = self._traces[trace_id]
+
+                    # Regenerate plot data to get the updated label
+                    plot_data = self._generate_plot_data(trace, dataset)
+
+                    if plot_data:
+                        # Remove the old legend entry
+                        try:
+                            self._legend.removeItem(plot_item)
+                        except Exception:
+                            pass  # Item might not be in legend
+
+                        # Add the updated legend entry with new label
+                        self._legend.addItem(plot_item, plot_data.label)
+
+                        updated = True
+
+        return updated
+
     def update_trace_style(self, trace_id: str, style: TraceStyle) -> None:
         """
         Update the visual style of a trace.

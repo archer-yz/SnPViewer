@@ -39,6 +39,7 @@ class DatasetBrowserPanel(QWidget):
     dataset_double_clicked = Signal(str)  # dataset_id
     create_chart_requested = Signal(str, str)  # dataset_id, chart_type
     dataset_removed = Signal(str, str)  # user_friendly_name, dataset_uuid
+    dataset_renamed = Signal(str, str)  # dataset_id, new_display_name
 
     def __init__(self, parent: Optional[QWidget] = None):
         """Initialize the dataset browser panel."""
@@ -47,6 +48,7 @@ class DatasetBrowserPanel(QWidget):
         self._current_project: Optional[Project] = None
         self._datasets: Dict[str, Dataset] = {}
         self._newly_added_datasets: set[str] = set()  # Track newly added datasets for collapsing
+        self._display_names: Dict[str, str] = {}  # Map dataset_id to custom display name
 
         self._setup_ui()
         self._setup_connections()
@@ -135,21 +137,89 @@ class DatasetBrowserPanel(QWidget):
 
     def add_dataset(self, dataset_id: str, dataset: Dataset) -> None:
         """Add a dataset to the browser."""
-        # Update the dataset's file_name to use the user-friendly name for legends and dialogs
-        dataset.file_name = dataset_id
+        # Generate display name (strip extension and handle duplicates)
+        display_name = self._generate_unique_display_name(dataset_id)
+        self._display_names[dataset_id] = display_name
+
+        # Update the dataset's file_name to use the display name for legends and dialogs
+        dataset.file_name = display_name
 
         self._datasets[dataset_id] = dataset
         self._newly_added_datasets.add(dataset_id)  # Mark as newly added
         self._refresh_datasets()
 
+    def _generate_unique_display_name(self, dataset_id: str) -> str:
+        """Generate a unique display name by stripping extension and handling duplicates."""
+        from pathlib import Path
+
+        # Strip extension from the dataset_id (which is typically a filename)
+        base_name = Path(dataset_id).stem
+
+        # Check if this base name is already in use
+        existing_names = set(self._display_names.values())
+
+        if base_name not in existing_names:
+            return base_name
+
+        # If duplicate, add (1), (2), etc.
+        counter = 1
+        while f"{base_name} ({counter})" in existing_names:
+            counter += 1
+
+        return f"{base_name} ({counter})"
+
+    def rename_dataset(self, dataset_id: str, new_name: str) -> bool:
+        """
+        Rename a dataset's display name.
+
+        Args:
+            dataset_id: The dataset ID to rename
+            new_name: The new display name
+
+        Returns:
+            True if renamed successfully, False otherwise
+        """
+        if dataset_id not in self._datasets:
+            return False
+
+        # Check if the new name is already in use by a different dataset
+        for did, dname in self._display_names.items():
+            if did != dataset_id and dname == new_name:
+                return False
+
+        # Update display name
+        self._display_names[dataset_id] = new_name
+
+        # Update the dataset's file_name for legends and dialogs
+        self._datasets[dataset_id].file_name = new_name
+
+        # Emit signal so charts can update their legends
+        self.dataset_renamed.emit(dataset_id, new_name)
+
+        # Refresh the display
+        self._refresh_datasets()
+
+        return True
+
+    def get_display_name(self, dataset_id: str) -> str:
+        """Get the display name for a dataset."""
+        return self._display_names.get(dataset_id, dataset_id)
+
     def remove_dataset(self, dataset_id: str) -> None:
         """Remove a dataset from the browser."""
         dataset_uuid = None
+        display_name = dataset_id  # Default to dataset_id
+
         if dataset_id in self._datasets:
             # Get the actual UUID from the dataset object before removing it
             dataset_obj = self._datasets[dataset_id]
             dataset_uuid = dataset_obj.id
             del self._datasets[dataset_id]
+
+        # Get the display name before removing it
+        if dataset_id in self._display_names:
+            display_name = self._display_names[dataset_id]
+            del self._display_names[dataset_id]
 
         # Also remove from project if present
         if self._current_project and dataset_uuid:
@@ -160,8 +230,8 @@ class DatasetBrowserPanel(QWidget):
             ]
 
         self._refresh_datasets()
-        # Emit both the user-friendly name and UUID for proper cleanup
-        self.dataset_removed.emit(dataset_id, dataset_uuid or dataset_id)
+        # Emit the display name (not dataset_id) and UUID for proper cleanup
+        self.dataset_removed.emit(display_name, dataset_uuid or dataset_id)
 
     def get_dataset(self, dataset_id: str) -> Optional[Dataset]:
         """Get a dataset by ID."""
@@ -170,6 +240,7 @@ class DatasetBrowserPanel(QWidget):
     def clear_all_datasets(self) -> None:
         """Clear all datasets from the browser."""
         self._datasets.clear()
+        self._display_names.clear()  # Also clear display names
         self._newly_added_datasets.clear()
         self._current_project = None
         self._refresh_datasets()
@@ -239,8 +310,8 @@ class DatasetBrowserPanel(QWidget):
 
         # Use actual dataset information if available
         if dataset:
-            # Use the dataset_id (which is now the user-friendly name) for display
-            name = dataset_id
+            # Use the display name (custom name or generated name without extension)
+            name = self._display_names.get(dataset_id, dataset_id)
             dataset_type = "S-Parameters"
 
             # Get number of frequency points
@@ -284,7 +355,7 @@ class DatasetBrowserPanel(QWidget):
             n_ports = dataset.s_params.shape[1]
             for i in range(n_ports):
                 for j in range(n_ports):
-                    param_name = f"S{i+1}{j+1}"
+                    param_name = f"S{i+1},{j+1}"
                     param_item = QTreeWidgetItem([param_name, "S-Parameter", "", ""])
                     param_item.setData(0, Qt.ItemDataRole.UserRole, f"{dataset_id}:{param_name}")
                     param_item.setFlags(param_item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
@@ -347,6 +418,12 @@ class DatasetBrowserPanel(QWidget):
         )
 
         menu.addSeparator()
+
+        # Rename action
+        rename_action = menu.addAction("Rename Dataset...")
+        rename_action.triggered.connect(
+            lambda: self._show_rename_dialog(dataset_id)
+        )
 
         # Dataset actions
         remove_action = menu.addAction("Remove Dataset")
@@ -429,6 +506,34 @@ class DatasetBrowserPanel(QWidget):
 
         if reply == QMessageBox.StandardButton.Yes:
             self.remove_dataset(base_dataset_id)
+
+    def _show_rename_dialog(self, dataset_id: str) -> None:
+        """Show dialog to rename a dataset."""
+        from PySide6.QtWidgets import QInputDialog
+
+        base_dataset_id = dataset_id.split(':')[0]
+        current_name = self.get_display_name(base_dataset_id)
+
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename Dataset",
+            "Enter new name for the dataset:",
+            text=current_name
+        )
+
+        if ok and new_name.strip():
+            new_name = new_name.strip()
+
+            # Check if name is already in use
+            if not self.rename_dataset(base_dataset_id, new_name):
+                QMessageBox.warning(
+                    self,
+                    "Rename Failed",
+                    f"The name '{new_name}' is already in use by another dataset."
+                )
+            else:
+                # Success - the display has already been refreshed by rename_dataset
+                pass
 
 
 class ChartsAreaPanel(QWidget):
