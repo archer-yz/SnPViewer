@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from snpviewer.backend.models.chart import Chart
 
+
 @dataclass
 class DatasetRef:
     """

@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy,
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import Trace, TraceStyle
 from snpviewer.frontend.plotting.plot_pipelines import (
-    PlotData, PlotType, prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data)
+    PlotData, PlotType, prepare_group_delay_data, prepare_magnitude_data,
+    prepare_phase_data)
 
 
 class ChartView(QWidget):
@@ -37,7 +38,8 @@ class ChartView(QWidget):
     marker_added = Signal(float, float, str)  # x, y, trace_id
     view_changed = Signal()
     add_traces_requested = Signal()  # Request to add traces from main window
-    tab_title_changed = Signal(str)  # New tab title
+    tab_title_changed = Signal(str, str)  # New tab title with type, new tab title without type
+    chart_title_changed = Signal(str)  # New chart title
     properties_changed = Signal()  # Emitted when any chart properties are modified
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -57,7 +59,6 @@ class ChartView(QWidget):
         self._chart_fonts = None
         self._chart_colors = None
         self._plot_area_settings = None
-        self._dataset_name = ""  # Dataset file name for reference
 
         # Data storage
         self._traces: Dict[str, Trace] = {}
@@ -943,6 +944,8 @@ class ChartView(QWidget):
         """Set the chart title (plot widget title)."""
         self._chart_title = title
         self._set_title_with_styling(title)
+        # Emit signal to notify that chart title changed
+        self.chart_title_changed.emit(title)
 
     def get_chart_title(self) -> str:
         """Get the current chart title."""
@@ -957,10 +960,10 @@ class ChartView(QWidget):
         """Get the current tab title."""
         return self._get_current_tab_title()
 
-    def set_dataset_name(self, dataset_name: str) -> None:
-        """Set the dataset name (typically from filename)."""
+    def set_chart_tab_title(self, tab_title: str) -> None:
+        """Set the chart tab title (typically from filename)."""
 
-        self._dataset_name = dataset_name
+        self._tab_title = tab_title
         self._update_tab_title()
 
     def _get_plot_type_name(self) -> str:
@@ -979,16 +982,12 @@ class ChartView(QWidget):
             # User has set a custom tab title, include plot type
             return f"{self._tab_title} ({plot_type_name})"
         else:
-            # Use default format with dataset name if available
-            if self._dataset_name:
-                return f"{plot_type_name} - {self._dataset_name}"
-            else:
-                return f"{plot_type_name} Chart"
+            return f"Chart ({plot_type_name})"
 
     def _update_tab_title(self) -> None:
         """Update the tab title and emit signal for tab to be updated."""
         new_tab_title = self._get_current_tab_title()
-        self.tab_title_changed.emit(new_tab_title)
+        self.tab_title_changed.emit(new_tab_title, self._tab_title)
 
     def _change_chart_title(self) -> None:
         """Show dialog to change the chart title (plot widget title)."""
@@ -1009,7 +1008,7 @@ class ChartView(QWidget):
         """Show dialog to change the tab title."""
         from PySide6.QtWidgets import QInputDialog
 
-        current_name = self._tab_title or (self._dataset_name if self._dataset_name else "Chart")
+        current_name = self._tab_title or "Chart"
         new_name, ok = QInputDialog.getText(
             self,
             "Change Tab Title",

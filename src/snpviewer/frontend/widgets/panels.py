@@ -452,6 +452,7 @@ class ChartsAreaPanel(QWidget):
 
         self._charts: Dict[str, Chart] = {}
         self._chart_datasets: Dict[str, str] = {}  # chart_id -> dataset_id mapping
+        self._chart_counter: int = 0  # Counter for sequential chart naming
 
         self._setup_ui()
         self._setup_connections()
@@ -515,6 +516,10 @@ class ChartsAreaPanel(QWidget):
         # Disable close button for placeholder
         self._chart_tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
 
+    def get_next_chart_number(self) -> int:
+        """Get the next chart number for naming purposes."""
+        return self._chart_counter + 1
+
     def add_chart(self, chart_id: str, chart: Chart, widget: QWidget, dataset_id: str = None) -> None:
         """Add a new chart tab."""
         # Remove placeholder if this is the first real chart
@@ -526,6 +531,9 @@ class ChartsAreaPanel(QWidget):
         # Track dataset association if provided
         if dataset_id:
             self._chart_datasets[chart_id] = dataset_id
+
+        # Increment chart counter
+        self._chart_counter += 1
 
         # Add tab - use the widget's tab title if it has one, otherwise use chart title
         if hasattr(widget, 'get_tab_title'):
@@ -542,8 +550,26 @@ class ChartsAreaPanel(QWidget):
         # Connect to tab title changes if the widget supports it
         if hasattr(widget, 'tab_title_changed'):
             widget.tab_title_changed.connect(
-                lambda new_title, cid=chart_id: self._update_tab_title(cid, new_title)
+                lambda new_title, _, cid=chart_id: self._update_tab_title(cid, new_title)
             )
+            widget.tab_title_changed.connect(
+                lambda _, new_title, cid=chart_id: self._update_chart_tab_title(cid, new_title)
+            )
+
+        if hasattr(widget, 'chart_title_changed'):
+            widget.chart_title_changed.connect(
+                lambda new_title, cid=chart_id: self._update_chart_title(cid, new_title)
+            )
+
+    def _update_chart_tab_title(self, chart_id: str, new_title: str) -> None:
+        """Update the chart model's title when the tab title changes."""
+        if chart_id in self._charts:
+            self._charts[chart_id].tab_title = new_title
+
+    def _update_chart_title(self, chart_id: str, new_title: str) -> None:
+        """Update the chart model's title when the chart title changes."""
+        if chart_id in self._charts:
+            self._charts[chart_id].title = new_title
 
     def remove_chart(self, chart_id: str) -> None:
         """Remove a chart tab."""
@@ -674,6 +700,7 @@ class ChartsAreaPanel(QWidget):
         # Clear internal data structures
         self._charts.clear()
         self._chart_datasets.clear()
+        self._chart_counter = 0  # Reset counter when clearing all charts
 
         # Add back the placeholder
         self._add_placeholder_tab()

@@ -6,35 +6,35 @@ for dataset browsing, chart viewing, and project management functionality.
 """
 from __future__ import annotations
 
-import platform
 import ctypes
 import json
+import platform
 import sys
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from PySide6 import QtCore, QtGui
+from PySide6 import QtGui
 from PySide6.QtCore import QSettings, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
                                QMainWindow, QMessageBox, QProgressBar,
-                               QSplitter, QVBoxLayout, QWidget)
-import snpviewer.frontend.resources_rc  # noqa: F401
+                               QWidget)
 
-from snpviewer.backend.models.dataset import Dataset
-from snpviewer.backend.models.project import Project, Preferences, DatasetRef
-from snpviewer.backend.models.chart import (AxisConfiguration, Chart, ChartAxes)
-from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
-from snpviewer.backend.conversions import touchstone_to_dataset
+import snpviewer.frontend.resources_rc  # noqa: F401
 from snpviewer.backend import parse_touchstone
-from snpviewer.frontend.widgets.smith_view import SmithView
-from snpviewer.frontend.widgets.chart_view import ChartView
-from snpviewer.frontend.widgets.panels import MainPanelLayout
+from snpviewer.backend.conversions import touchstone_to_dataset
+from snpviewer.backend.models.chart import AxisConfiguration, Chart, ChartAxes
+from snpviewer.backend.models.dataset import Dataset
+from snpviewer.backend.models.project import DatasetRef, Preferences, Project
+from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
+from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
 from snpviewer.frontend.plotting.plot_pipelines import PlotType
 from snpviewer.frontend.services.loader import ThreadedLoader
-from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
-from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
+from snpviewer.frontend.widgets.chart_view import ChartView
+from snpviewer.frontend.widgets.panels import MainPanelLayout
+from snpviewer.frontend.widgets.smith_view import SmithView
 
 
 class SnPViewerMainWindow(QMainWindow):
@@ -780,11 +780,14 @@ class SnPViewerMainWindow(QMainWindow):
                 QMessageBox.warning(self, "Error", f"Dataset {dataset_id} not found")
                 return
 
+            # Get the next chart number for naming
+            chart_number = self._main_panels.charts_area.get_next_chart_number()
+
             # Create appropriate chart widget
             if chart_type.lower() in ['smith', 'smith_chart']:
                 chart_widget = SmithView()
                 chart_widget.set_dataset(dataset)
-                chart_title = f"Smith Chart - {dataset_id}"
+                chart_tab_title = f"Chart{chart_number} (Smith Chart)"
             else:
                 chart_widget = ChartView()
 
@@ -796,8 +799,8 @@ class SnPViewerMainWindow(QMainWindow):
                     lambda: self._set_modified(True)
                 )
 
-                # Set the dataset name for tab title generation
-                chart_widget.set_dataset_name(dataset_id)
+                # Set a counter-based chart name instead of dataset name
+                chart_widget.set_chart_tab_title(f"Chart{chart_number}")
 
                 # Set the correct plot type based on chart_type (this will also update the tab title)
                 if chart_type.lower() == "magnitude":
@@ -807,7 +810,7 @@ class SnPViewerMainWindow(QMainWindow):
                 elif chart_type.lower() == "group_delay":
                     chart_widget.set_plot_type(PlotType.GROUP_DELAY)
 
-                chart_title = chart_widget.get_tab_title()
+                chart_tab_title = chart_widget._tab_title
 
             chart_id = str(uuid.uuid4())[:8]  # Short unique ID
 
@@ -828,7 +831,8 @@ class SnPViewerMainWindow(QMainWindow):
 
             chart = Chart(
                 id=chart_id,
-                title=chart_title,
+                tab_title=chart_tab_title,
+                title=chart_widget.get_chart_title(),
                 chart_type=chart_type,
                 trace_ids=[],
                 limit_lines={},
@@ -1074,9 +1078,9 @@ class SnPViewerMainWindow(QMainWindow):
 
                         # 2. Check if trace_ids start with the original UUID (for backward compatibility)
                         original_uuid = None
-                        for uuid, friendly_name in uuid_to_friendly_name.items():
+                        for _uuid, friendly_name in uuid_to_friendly_name.items():
                             if friendly_name == dataset_id:
-                                original_uuid = uuid
+                                original_uuid = _uuid
                                 break
 
                         trace_matches_uuid = []
@@ -1127,33 +1131,17 @@ class SnPViewerMainWindow(QMainWindow):
                             break
 
                     if chart_dataset and chart_dataset_id:
-                        # Recreate the chart widget
-                        chart_widget = self._create_chart_widget(chart.chart_type, chart_dataset, chart_dataset_id)
+                        # # Get the next chart number for naming
+                        # chart_number = self._main_panels.charts_area.get_next_chart_number()
+
+                        # Recreate the chart widget with counter-based naming
+                        chart_widget = self._create_chart_widget(
+                            chart.chart_type,
+                            chart_dataset,
+                            chart.tab_title
+                        )
                         if chart_widget:
-                            # Generate new chart title with user-friendly dataset name
-                            if chart.chart_type.lower() in ['smith', 'smith_chart']:
-                                new_title = f"Smith Chart - {chart_dataset_id}"
-                            else:
-                                # Map chart type to proper display name (match ChartView._get_plot_type_name)
-                                chart_type_mapping = {
-                                    'magnitude': 'Magnitude',
-                                    'phase': 'Phase',
-                                    'group_delay': 'Group Delay',
-                                    'groupdelay': 'Group Delay'
-                                }
-                                chart_type_name = chart_type_mapping.get(
-                                    chart.chart_type.lower(),
-                                    chart.chart_type.replace('_', ' ').title()
-                                )
-                                new_title = f"{chart_type_name} - {chart_dataset_id}"
-
-                            # Set the regenerated chart title instead of the saved one
-
-                            chart_widget.set_chart_title(new_title)
-                            chart_widget.set_tab_title(new_title)
-
-                            # Update the chart object's title too for consistency
-                            chart.title = new_title
+                            chart_widget.set_chart_title(chart.title)
 
                             # Add chart to charts area
                             self._main_panels.charts_area.add_chart(chart.id, chart, chart_widget, chart_dataset_id)
@@ -1485,14 +1473,14 @@ class SnPViewerMainWindow(QMainWindow):
         self._show_progress("All files loaded successfully", 100)
         self._hide_progress_delayed()
 
-    def _create_chart_widget(self, chart_type: str, dataset: Dataset, dataset_name: str = None):
+    def _create_chart_widget(self, chart_type: str, dataset: Dataset, tab_title: str = None):
         """
         Create a chart widget of the specified type.
 
         Args:
             chart_type: Type of chart to create
             dataset: Dataset to associate with the chart
-            dataset_name: User-friendly name for the dataset (optional)
+            tab_title: User-friendly name for the dataset (optional)
 
         Returns:
             Chart widget instance or None if creation failed
@@ -1514,9 +1502,9 @@ class SnPViewerMainWindow(QMainWindow):
                 )
 
                 # Set the dataset name for tab title generation
-                display_name = dataset_name if dataset_name else dataset.file_name
+                display_name = tab_title if tab_title else dataset.file_name
 
-                chart_widget.set_dataset_name(display_name)
+                chart_widget.set_chart_tab_title(display_name)
 
                 # Set the correct plot type based on chart_type
                 if chart_type.lower() == "magnitude":

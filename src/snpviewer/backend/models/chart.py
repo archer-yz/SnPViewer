@@ -102,6 +102,7 @@ class Chart:
 
     Attributes:
         id: Unique identifier for this chart
+        tab_title: Title displayed on the chart's tab
         title: Display title for the chart
         chart_type: Type of chart ('Magnitude', 'Phase', 'GroupDelay',
                    'SmithZ', 'SmithY', 'LinearPhase', 'PhaseError')
@@ -120,6 +121,7 @@ class Chart:
         layout_options: Additional layout and styling options
     """
     id: str
+    tab_title: str
     title: str
     chart_type: str
     trace_ids: List[str] = field(default_factory=list)
@@ -323,6 +325,7 @@ class Chart:
         """
         return {
             'id': self.id,
+            'tab_title': self.tab_title,
             'title': self.title,
             'chart_type': self.chart_type,
             'trace_ids': self.trace_ids,
@@ -357,6 +360,7 @@ class Chart:
 
         return cls(
             id=data['id'],
+            tab_title=data.get('tab_title', data['title']),
             title=data['title'],
             chart_type=data['chart_type'],
             trace_ids=data.get('trace_ids', []),
