@@ -28,6 +28,7 @@ from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.project import DatasetRef, Preferences, Project
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
 from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
+from snpviewer.frontend.dialogs.create_chart import CreateChartDialog
 from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
 from snpviewer.frontend.plotting.plot_pipelines import PlotType
 from snpviewer.frontend.services.loader import ThreadedLoader
@@ -183,6 +184,16 @@ class SnPViewerMainWindow(QMainWindow):
         self._exit_action.triggered.connect(self.close)
         file_menu.addAction(self._exit_action)
 
+        # Chart Menu
+        chart_menu = menubar.addMenu("&Chart")
+
+        # Create Chart action
+        self._create_chart_action = QAction("&Create Chart...", self)
+        self._create_chart_action.setShortcut(QKeySequence("Ctrl+N"))
+        self._create_chart_action.setStatusTip("Create a new chart with multiple datasets")
+        self._create_chart_action.triggered.connect(self._create_new_chart)
+        chart_menu.addAction(self._create_chart_action)
+
         # View Menu
         view_menu = menubar.addMenu("&View")
 
@@ -243,6 +254,8 @@ class SnPViewerMainWindow(QMainWindow):
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._new_project_action)
         self._toolbar.addAction(self._save_project_action)
+        self._toolbar.addSeparator()
+        self._toolbar.addAction(self._create_chart_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._export_action)
 
@@ -1048,6 +1061,146 @@ class SnPViewerMainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Renamed dataset to '{new_display_name}' and updated {charts_updated} chart(s)"
             )
+
+    def _create_new_chart(self) -> None:
+        """
+        Handle Chart > Create Chart menu action.
+
+        Opens a dialog to select chart type, datasets, and S-parameters, then creates
+        a new chart with traces for all selected dataset×parameter combinations.
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        from snpviewer.frontend.widgets.chart_view import PlotType
+
+        # Get available datasets
+        datasets = self._main_panels.dataset_browser._datasets
+        if not datasets:
+            QMessageBox.information(
+                self,
+                "No Datasets Available",
+                "Please load datasets first before creating a chart."
+            )
+            return
+
+        # Show the create chart dialog
+        dialog = CreateChartDialog(datasets, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # Get selections
+        chart_type = dialog.get_chart_type()
+        selected_dataset_ids = dialog.get_selected_datasets()
+
+        if not selected_dataset_ids:
+            QMessageBox.warning(
+                self,
+                "No Datasets Selected",
+                "Please select at least one dataset."
+            )
+            return
+
+        # Create traces
+        traces_data = dialog.create_traces()
+
+        if not traces_data:
+            QMessageBox.warning(
+                self,
+                "No Parameters Selected",
+                "Please select at least one S-parameter."
+            )
+            return
+
+        # Get the next chart number for naming
+        chart_number = self._main_panels.charts_area.get_next_chart_number()
+        chart_id = str(uuid.uuid4())[:8]  # Short unique ID
+
+        # Create appropriate chart widget based on chart type
+        if chart_type.lower() in ['smith', 'smith_chart']:
+            chart_widget = SmithView()
+            chart_tab_title = f"Chart{chart_number} (Smith Chart)"
+        else:
+            chart_widget = ChartView()
+
+            # Connect signals
+            chart_widget.add_traces_requested.connect(
+                lambda: self._on_add_traces_requested(chart_widget, chart_type)
+            )
+            chart_widget.properties_changed.connect(
+                lambda: self._set_modified(True)
+            )
+
+            # Set a counter-based chart name
+            chart_widget.set_chart_tab_title(f"Chart{chart_number}")
+
+            # Set the correct plot type based on chart_type
+            if chart_type.lower() == "magnitude":
+                chart_widget.set_plot_type(PlotType.MAGNITUDE)
+            elif chart_type.lower() == "phase":
+                chart_widget.set_plot_type(PlotType.PHASE)
+            elif chart_type.lower() == "group_delay":
+                chart_widget.set_plot_type(PlotType.GROUP_DELAY)
+
+            chart_tab_title = chart_widget._tab_title
+
+        # Create axis configurations based on chart type
+        if chart_type.lower() in ['smith', 'smith_chart']:
+            x_axis = AxisConfiguration(unit="", label="Real")
+            y_axis = AxisConfiguration(unit="", label="Imaginary")
+        else:
+            x_axis = AxisConfiguration(unit="Hz", label="Frequency", scale="log")
+            if chart_type.lower() == "magnitude":
+                y_axis = AxisConfiguration(unit="dB", label="Magnitude")
+            elif chart_type.lower() == "phase":
+                y_axis = AxisConfiguration(unit="°", label="Phase")
+            elif chart_type.lower() == "group_delay":
+                y_axis = AxisConfiguration(unit="s", label="Group Delay")
+            else:
+                y_axis = AxisConfiguration(unit="", label="Value")
+
+        axes = ChartAxes(x=x_axis, y=y_axis)
+
+        # Create chart model with all required parameters
+        chart = Chart(
+            id=chart_id,
+            tab_title=chart_tab_title,
+            title=chart_widget.get_chart_title() if hasattr(chart_widget, 'get_chart_title') else chart_tab_title,
+            chart_type=chart_type,
+            trace_ids=[],
+            limit_lines={},
+            axes=axes
+        )
+
+        # Add chart to charts area with the widget
+        self._main_panels.charts_area.add_chart(chart_id, chart, chart_widget)
+
+        # Add all traces to the chart
+        for trace_id, trace, dataset_id in traces_data:
+            # Add trace to chart model
+            chart.trace_ids.append(trace_id)
+
+            # Get dataset for plotting
+            dataset = datasets.get(dataset_id)
+            if dataset:
+                # Add trace to chart widget
+                if chart_type.lower() in ['smith', 'smith_chart']:
+                    # SmithView uses add_trace(trace, style)
+                    chart_widget.add_trace(trace, trace.style)
+                else:
+                    # ChartView uses add_trace(trace_id, trace, dataset)
+                    chart_widget.add_trace(trace_id, trace, dataset)
+
+        # Update project if we have one
+        if self._current_project:
+            self._current_project.add_chart(chart)
+            self._set_modified(True)
+
+        # Show success message
+        dataset_count = len(selected_dataset_ids)
+        trace_count = len(traces_data)
+        self.statusBar().showMessage(
+            f"Created {chart_type} chart with {trace_count} trace(s) from {dataset_count} dataset(s)"
+        )
 
     def _on_add_parameter_to_chart_requested(self, chart_id: str, dataset_id: str, param_name: str) -> None:
         """
