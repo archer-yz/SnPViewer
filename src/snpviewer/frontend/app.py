@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6 import QtGui
-from PySide6.QtCore import QSettings, QTimer, Signal
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
                                QMainWindow, QMessageBox, QProgressBar, QWidget)
@@ -287,6 +287,7 @@ class SnPViewerMainWindow(QMainWindow):
         dataset_browser.create_chart_requested.connect(self._on_create_chart_requested)
         dataset_browser.dataset_removed.connect(self._on_dataset_removed)
         dataset_browser.dataset_renamed.connect(self._on_dataset_renamed)
+        dataset_browser.add_parameter_to_chart_requested.connect(self._on_add_parameter_to_chart_requested)
 
         # Charts area signals
         charts_area = self._main_panels.charts_area
@@ -973,8 +974,14 @@ class SnPViewerMainWindow(QMainWindow):
 
     def _on_chart_selected(self, chart_id: str) -> None:
         """Handle chart selection in charts area."""
-        # Update menus, toolbars, or status based on selected chart
-        self.statusBar().showMessage(f"Selected chart: {chart_id}")
+        # Get the chart's tab title to show in status bar
+        chart_info = self._main_panels.charts_area.get_all_charts().get(chart_id)
+        if chart_info and 'widget' in chart_info:
+            chart_tab_title = chart_info['widget'].get_tab_title()
+            self.statusBar().showMessage(f"Selected chart: {chart_tab_title}")
+        else:
+            # Fallback to chart_id if we can't find the chart
+            self.statusBar().showMessage(f"Selected chart: {chart_id}")
 
     def _on_chart_closed(self, chart_id: str) -> None:
         """Handle chart close request."""
@@ -1041,6 +1048,188 @@ class SnPViewerMainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Renamed dataset to '{new_display_name}' and updated {charts_updated} chart(s)"
             )
+
+    def _on_add_parameter_to_chart_requested(self, chart_id: str, dataset_id: str, param_name: str) -> None:
+        """
+        Handle request to add a parameter to a chart.
+
+        Args:
+            chart_id: Empty string means show dialog to select chart
+            dataset_id: The dataset ID containing the parameter
+            param_name: The S-parameter name (e.g., "S1,1")
+        """
+        from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QLabel,
+                                       QListWidget, QMessageBox, QVBoxLayout)
+
+        # Get available charts
+        chart_list = self._main_panels.charts_area.get_chart_list()
+
+        if not chart_list:
+            QMessageBox.information(
+                self,
+                "No Charts Available",
+                "Please create a chart first before adding traces."
+            )
+            return
+
+        # Show dialog to select chart
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Chart")
+        dialog.setModal(True)
+        dialog.resize(400, 300)
+
+        layout = QVBoxLayout(dialog)
+
+        # Info label
+        dataset = self._main_panels.dataset_browser.get_dataset(dataset_id)
+        dataset_name = dataset.display_name if dataset else dataset_id
+        info_label = QLabel(f"Add {param_name} from dataset '{dataset_name}' to which chart(s)?")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # Chart list with multiple selection enabled
+        chart_list_widget = QListWidget()
+        chart_list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        for cid, title in chart_list:
+            chart_list_widget.addItem(title)
+            chart_list_widget.item(chart_list_widget.count() - 1).setData(Qt.ItemDataRole.UserRole, cid)
+
+        # Select current chart if available
+        current_chart_id = self._main_panels.charts_area.get_current_chart_id()
+        if current_chart_id:
+            for i in range(chart_list_widget.count()):
+                if chart_list_widget.item(i).data(Qt.ItemDataRole.UserRole) == current_chart_id:
+                    chart_list_widget.item(i).setSelected(True)
+                    break
+
+        layout.addWidget(chart_list_widget)
+
+        # Buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Show dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_items = chart_list_widget.selectedItems()
+            if selected_items:
+                # Add to all selected charts
+                added_count = 0
+                skipped_count = 0
+                for item in selected_items:
+                    selected_chart_id = item.data(Qt.ItemDataRole.UserRole)
+                    result = self._add_parameter_to_chart(selected_chart_id, dataset_id, param_name)
+                    if result:
+                        added_count += 1
+                    else:
+                        skipped_count += 1
+
+                # Show summary message
+                if added_count > 0:
+                    if skipped_count > 0:
+                        msg = f"Added {param_name} to {added_count} chart(s), skipped {skipped_count} (already exists)"
+                    else:
+                        msg = f"Added {param_name} from '{dataset_name}' to {added_count} chart(s)"
+                    self.statusBar().showMessage(msg)
+                elif skipped_count > 0:
+                    self.statusBar().showMessage(f"{param_name} already exists in all selected charts")
+
+    def _add_parameter_to_chart(self, chart_id: str, dataset_id: str, param_name: str) -> bool:
+        """
+        Actually add the parameter to the specified chart.
+
+        Args:
+            chart_id: The chart ID to add to
+            dataset_id: The dataset ID containing the parameter
+            param_name: The S-parameter name (e.g., "S1,1")
+
+        Returns:
+            True if the trace was added, False if it already exists or there was an error
+        """
+        # Get the chart widget
+        chart_widget = self._main_panels.charts_area.get_chart_widget(chart_id)
+        if not chart_widget:
+            return False
+
+        # Get the dataset
+        dataset = self._main_panels.dataset_browser.get_dataset(dataset_id)
+        if not dataset:
+            return False
+
+        # Parse port numbers from param_name (e.g., "S1,1" -> (1, 1))
+        try:
+            # Remove 'S' prefix and split by comma
+            parts = param_name[1:].split(',')
+            port_i = int(parts[0])
+            port_j = int(parts[1])
+        except (IndexError, ValueError):
+            return False
+
+        # Generate a unique trace ID
+        trace_id = f"{dataset.id}_S{port_i}{port_j}_{uuid.uuid4().hex[:8]}"
+
+        # Check if this trace already exists in the chart (by looking at existing traces)
+        if hasattr(chart_widget, '_traces'):
+            for existing_trace_id, existing_trace in chart_widget._traces.items():
+                if (hasattr(existing_trace, 'dataset_id') and
+                        existing_trace.dataset_id == dataset.id and
+                        hasattr(existing_trace, 'port_path') and
+                        existing_trace.port_path.i == port_i and
+                        existing_trace.port_path.j == port_j):
+                    # Trace already exists, skip silently
+                    return False
+
+        # Determine the metric based on chart type
+        chart_type = getattr(chart_widget, '_plot_type', None)
+        if chart_type:
+            # For ChartView, map plot type to metric
+            from snpviewer.frontend.widgets.chart_view import PlotType
+            if chart_type == PlotType.MAGNITUDE:
+                metric = "magnitude_dB"
+            elif chart_type == PlotType.PHASE:
+                metric = "phase_deg"
+            elif chart_type == PlotType.GROUP_DELAY:
+                metric = "group_delay"
+            else:
+                metric = "magnitude_dB"  # Default
+        else:
+            # For SmithView or unknown, default to magnitude
+            metric = "magnitude_dB"
+
+        # Add the trace to the chart
+        if hasattr(chart_widget, 'add_trace'):
+            from snpviewer.backend.models.trace import (PortPath, Trace,
+                                                        TraceStyle)
+
+            # Pick a color from a palette (cycling through available colors)
+            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
+                      "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
+            trace_count = len(chart_widget._traces) if hasattr(chart_widget, '_traces') else 0
+            color = colors[trace_count % len(colors)]
+
+            # Create a new trace with all required fields
+            trace = Trace(
+                id=trace_id,
+                dataset_id=dataset.id,
+                domain="S",
+                port_path=PortPath(i=port_i, j=port_j),
+                metric=metric,
+                style=TraceStyle(color=color, line_width=2, marker_style='none')
+            )
+
+            # Add the trace
+            chart_widget.add_trace(trace_id, trace, dataset)
+
+            # Mark project as modified
+            if self._current_project:
+                self._set_modified(True)
+
+            return True
+        else:
+            return False
 
     def _on_project_loaded(self, project: Project) -> None:
         """Handle project loaded - restore UI state with datasets and charts."""

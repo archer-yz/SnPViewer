@@ -6,6 +6,7 @@ for organizing and displaying S-parameter data and visualizations.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -32,7 +33,7 @@ class DatasetBrowserPanel(QWidget):
     Signals:
         dataset_selected: Emitted when a dataset is selected
         dataset_double_clicked: Emitted when a dataset is double-clicked
-        create_chart_requested: Emitted when user wants to create a chart
+        create_chart_requested: Emitted when user wants to create a chart_
     """
 
     dataset_selected = Signal(str)  # dataset_id
@@ -40,6 +41,7 @@ class DatasetBrowserPanel(QWidget):
     create_chart_requested = Signal(str, str)  # dataset_id, chart_type
     dataset_removed = Signal(str, str)  # user_friendly_name, dataset_uuid
     dataset_renamed = Signal(str, str)  # dataset_id, new_display_name
+    add_parameter_to_chart_requested = Signal(str, str, str)  # chart_id, dataset_id, param_name
 
     def __init__(self, parent: Optional[QWidget] = None):
         """Initialize the dataset browser panel."""
@@ -387,37 +389,52 @@ class DatasetBrowserPanel(QWidget):
         if not dataset_id:
             return
 
+        # Check if this is a child item (S-parameter) or parent item (dataset)
+        is_child_item = ':' in dataset_id
+
         menu = QMenu(self)
 
-        # Chart creation actions
-        create_menu = menu.addMenu("Create Chart")
+        if is_child_item:
+            # Context menu for S-parameter child items
+            # Extract base dataset ID and parameter name
+            base_dataset_id, param_name = dataset_id.split(':', 1)
 
-        magnitude_action = create_menu.addAction("Magnitude Plot")
-        magnitude_action.triggered.connect(
-            lambda: self.create_chart_requested.emit(dataset_id, "magnitude")
-        )
+            # Add to Chart action
+            add_to_chart_action = menu.addAction("Add to Chart...")
+            add_to_chart_action.triggered.connect(
+                lambda: self._request_add_to_chart(base_dataset_id, param_name)
+            )
+        else:
+            # Context menu for dataset parent items
+            # Chart creation actions
+            create_menu = menu.addMenu("Create Chart")
 
-        phase_action = create_menu.addAction("Phase Plot")
-        phase_action.triggered.connect(
-            lambda: self.create_chart_requested.emit(dataset_id, "phase")
-        )
+            magnitude_action = create_menu.addAction("Magnitude Plot")
+            magnitude_action.triggered.connect(
+                lambda: self.create_chart_requested.emit(dataset_id, "magnitude")
+            )
 
-        smith_action = create_menu.addAction("Smith Chart")
-        smith_action.triggered.connect(
-            lambda: self.create_chart_requested.emit(dataset_id, "smith")
-        )
+            phase_action = create_menu.addAction("Phase Plot")
+            phase_action.triggered.connect(
+                lambda: self.create_chart_requested.emit(dataset_id, "phase")
+            )
 
-        menu.addSeparator()
+            smith_action = create_menu.addAction("Smith Chart")
+            smith_action.triggered.connect(
+                lambda: self.create_chart_requested.emit(dataset_id, "smith")
+            )
 
-        # Rename action
-        rename_action = menu.addAction("Rename Dataset...")
-        rename_action.triggered.connect(
-            lambda: self._show_rename_dialog(dataset_id)
-        )
+            menu.addSeparator()
 
-        # Dataset actions
-        remove_action = menu.addAction("Remove Dataset")
-        remove_action.triggered.connect(self._remove_selected_dataset)
+            # Rename action
+            rename_action = menu.addAction("Rename Dataset...")
+            rename_action.triggered.connect(
+                lambda: self._show_rename_dialog(dataset_id)
+            )
+
+            # Dataset actions
+            remove_action = menu.addAction("Remove Dataset")
+            remove_action.triggered.connect(self._remove_selected_dataset)
 
         menu.exec(self._dataset_tree.mapToGlobal(position))
 
@@ -524,6 +541,19 @@ class DatasetBrowserPanel(QWidget):
             else:
                 # Success - the display has already been refreshed by rename_dataset
                 pass
+
+    def _request_add_to_chart(self, dataset_id: str, param_name: str) -> None:
+        """
+        Request to add a parameter to a chart. This will be handled by app.py.
+
+        Args:
+            dataset_id: The dataset ID containing the parameter
+            param_name: The S-parameter name (e.g., "S1,1")
+        """
+        # Parse port numbers from param_name (e.g., "S1,1" -> (1, 1))
+        # For now, we'll pass the param_name and let app.py handle the parsing
+        # We emit a signal with empty chart_id - app.py will show a dialog to select the chart
+        self.add_parameter_to_chart_requested.emit("", dataset_id, param_name)
 
 
 class ChartsAreaPanel(QWidget):
@@ -636,7 +666,17 @@ class ChartsAreaPanel(QWidget):
         else:
             tab_title = chart.title
 
-        tab_index = self._chart_tabs.addTab(widget, tab_title)
+        # Ensure the tab title is unique
+        unique_tab_title = self._ensure_unique_chart_tab_title(tab_title, chart_id)
+
+        # Update the chart's tab_title to the unique version
+        chart.tab_title = unique_tab_title
+
+        # Update the widget's tab title if it was changed
+        if unique_tab_title != tab_title and hasattr(widget, 'set_chart_tab_title'):
+            widget.set_chart_tab_title(unique_tab_title)
+
+        tab_index = self._chart_tabs.addTab(widget, unique_tab_title)
         self._chart_tabs.setCurrentIndex(tab_index)
 
         # Store chart ID in tab data using tabBar
@@ -645,21 +685,46 @@ class ChartsAreaPanel(QWidget):
         # Connect to tab title changes if the widget supports it
         if hasattr(widget, 'tab_title_changed'):
             widget.tab_title_changed.connect(
-                lambda new_title, _, cid=chart_id: self._update_tab_title(cid, new_title)
+                lambda new_title, new_title_no_type, cid=chart_id: self._update_tab_title(
+                    cid, new_title, new_title_no_type)
             )
-            widget.tab_title_changed.connect(
-                lambda _, new_title, cid=chart_id: self._update_chart_tab_title(cid, new_title)
-            )
+            # widget.tab_title_changed.connect(
+            #     lambda _, new_title, cid=chart_id: self._update_chart_tab_title(cid, new_title)
+            # )
 
         if hasattr(widget, 'chart_title_changed'):
             widget.chart_title_changed.connect(
                 lambda new_title, cid=chart_id: self._update_chart_title(cid, new_title)
             )
 
-    def _update_chart_tab_title(self, chart_id: str, new_title: str) -> None:
-        """Update the chart model's title when the tab title changes."""
-        if chart_id in self._charts:
-            self._charts[chart_id].tab_title = new_title
+    def _ensure_unique_chart_tab_title(self, desired_title: str, current_chart_id: str) -> str:
+        """
+        Ensure the chart tab title is unique among all charts.
+
+        Args:
+            desired_title: The desired tab title
+            current_chart_id: The ID of the chart being renamed
+
+        Returns:
+            A unique tab title, potentially with a suffix like (1), (2), etc.
+        """
+        existing_titles = set()
+        for i in range(self._chart_tabs.count()):
+            tab_chart_id = self._chart_tabs.tabBar().tabData(i)
+            if tab_chart_id and tab_chart_id != current_chart_id:
+                existing_titles.add(self._chart_tabs.tabText(i))
+
+        if desired_title not in existing_titles:
+            return desired_title
+
+        # Find a unique suffix
+        counter = 1
+        new_title = re.sub(r'(\s*)(\([^)]*\))$', rf' ({counter})\1\2', desired_title)
+        while new_title in existing_titles:
+            counter += 1
+            new_title = re.sub(r'(\s*)(\([^)]*\))$', rf' ({counter})\1\2', desired_title)
+
+        return new_title
 
     def _update_chart_title(self, chart_id: str, new_title: str) -> None:
         """Update the chart model's title when the chart title changes."""
@@ -687,12 +752,28 @@ class ChartsAreaPanel(QWidget):
         if not self._charts:
             self._add_placeholder_tab()
 
-    def _update_tab_title(self, chart_id: str, new_title: str) -> None:
+    def _update_tab_title(self, chart_id: str, new_title: str, new_title_no_type: str) -> None:
         """Update the tab title for a specific chart."""
-        # Find tab index for this chart
+        # Ensure the new title is unique
+        unique_title = self._ensure_unique_chart_tab_title(new_title, chart_id)
+
+        # Find tab index for this chart and update
         for i in range(self._chart_tabs.count()):
             if self._chart_tabs.tabBar().tabData(i) == chart_id:
-                self._chart_tabs.setTabText(i, new_title)
+                self._chart_tabs.setTabText(i, unique_title)
+
+                # # If the title was modified for uniqueness, update the chart widget
+                # if unique_title != new_title and chart_id in self._charts:
+                #     # Get the widget to update its internal title
+                #     widget = self._chart_tabs.widget(i)
+                #     if widget and hasattr(widget, 'set_chart_tab_title'):
+                #         # Temporarily disconnect to avoid recursive signals
+                #         widget.blockSignals(True)
+                #         widget.set_chart_tab_title(unique_title)
+                #         widget.blockSignals(False)
+
+                # Update the chart model
+                self._charts[chart_id].tab_title = new_title_no_type
                 break
 
     def get_current_chart_id(self) -> Optional[str]:
@@ -700,6 +781,36 @@ class ChartsAreaPanel(QWidget):
         current_index = self._chart_tabs.currentIndex()
         if current_index >= 0:
             return self._chart_tabs.tabBar().tabData(current_index)
+        return None
+
+    def get_chart_list(self) -> list[tuple[str, str]]:
+        """
+        Get a list of all charts for selection dialogs.
+
+        Returns:
+            List of tuples (chart_id, chart_tab_title)
+        """
+        chart_list = []
+        for i in range(self._chart_tabs.count()):
+            chart_id = self._chart_tabs.tabBar().tabData(i)
+            if chart_id:  # Skip placeholder tabs
+                tab_title = self._chart_tabs.tabText(i)
+                chart_list.append((chart_id, tab_title))
+        return chart_list
+
+    def get_chart_widget(self, chart_id: str) -> Optional[QWidget]:
+        """
+        Get the widget for a specific chart.
+
+        Args:
+            chart_id: The chart ID
+
+        Returns:
+            The chart widget, or None if not found
+        """
+        for i in range(self._chart_tabs.count()):
+            if self._chart_tabs.tabBar().tabData(i) == chart_id:
+                return self._chart_tabs.widget(i)
         return None
 
     def get_all_charts(self) -> Dict[str, Dict]:
