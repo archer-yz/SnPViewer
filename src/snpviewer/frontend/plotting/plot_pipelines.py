@@ -183,10 +183,10 @@ def prepare_magnitude_data(trace: Trace, dataset, linear_scale: bool = False) ->
         y_data = convert_s_to_db(s_param)
         units_y = "dB"
 
-    # Create label with filename
-    filename = getattr(dataset, 'file_name', 'Unknown')
+    # Create label with display name
+    display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
     param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
-    label = f"{filename}: {param_label}"
+    label = f"{display_name}: {param_label}"
 
     return PlotData(
         x=freq,
@@ -221,10 +221,10 @@ def prepare_phase_data(trace: Trace, dataset, degrees: bool = True, unwrap: bool
 
     units_y = "Degrees" if degrees else "Radians"
 
-    # Create label with filename
-    filename = getattr(dataset, 'file_name', 'Unknown')
+    # Create label with display name
+    display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
     param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
-    label = f"{filename}: {param_label}"
+    label = f"{display_name}: {param_label}"
 
     return PlotData(
         x=freq,
@@ -259,10 +259,10 @@ def prepare_group_delay_data(trace: Trace, dataset) -> PlotData:
     # Frequency array for group delay (one point shorter)
     freq_gd = (freq[:-1] + freq[1:]) / 2  # Midpoint frequencies
 
-    # Create label with filename
-    filename = getattr(dataset, 'file_name', 'Unknown')
+    # Create label with display name
+    display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
     param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
-    label = f"{filename}: {param_label}"
+    label = f"{display_name}: {param_label}"
 
     return PlotData(
         x=freq_gd,
@@ -305,10 +305,10 @@ def prepare_smith_data(trace: Trace, dataset, mode: str = 'Z') -> PlotData:
     # In Y-mode, we might want to show the admittance representation
     # This typically involves the same gamma but interpreted differently
 
-    # Create label with filename
-    filename = getattr(dataset, 'file_name', 'Unknown')
+    # Create label with display name
+    display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
     param_label = f"{trace.domain}{trace.port_path.i},{trace.port_path.j}"
-    label = f"{filename}: {param_label}"
+    label = f"{display_name}: {param_label}"
 
     return PlotData(
         x=x_data,

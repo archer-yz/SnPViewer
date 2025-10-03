@@ -553,6 +553,7 @@ def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None):
         id=Dataset.create_id(file_path, file_size, file_modified),
         file_path=file_path,
         file_name=path_obj.name,
+        display_name=path_obj.stem,  # Default display name without extension
         n_ports=touchstone_data.n_ports,
         frequency_hz=touchstone_data.frequency_hz,
         version=touchstone_data.version,

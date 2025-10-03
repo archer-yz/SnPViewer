@@ -763,8 +763,10 @@ class SnPViewerMainWindow(QMainWindow):
     # Panel Event Handlers
     def _on_dataset_selected(self, dataset_id: str) -> None:
         """Handle dataset selection in browser."""
-        # Update status bar or other UI elements based on selection
-        self.statusBar().showMessage(f"Selected dataset: {dataset_id}")
+        # Get the dataset to show its display name
+        dataset = self._main_panels.dataset_browser.get_dataset(dataset_id)
+        display_name = dataset.display_name if dataset else dataset_id
+        self.statusBar().showMessage(f"Selected dataset: {display_name}")
 
     def _on_dataset_double_clicked(self, dataset_id: str) -> None:
         """Handle dataset double-click in browser."""
@@ -864,7 +866,7 @@ class SnPViewerMainWindow(QMainWindow):
                     self._current_project.add_chart(chart)
                     self._set_modified(True)
 
-                msg = f"Created {chart_type} chart with {len(selected_traces)} traces for {dataset.file_name}"
+                msg = f"Created {chart_type} chart with {len(selected_traces)} traces for {dataset.display_name}"
                 self.statusBar().showMessage(msg)
             else:
                 # User cancelled - don't create chart
@@ -1026,6 +1028,13 @@ class SnPViewerMainWindow(QMainWindow):
                 if widget.update_dataset_name(dataset.id, new_display_name):
                     charts_updated += 1
 
+        # Update the display_name in the project's dataset_ref for persistence
+        if self._current_project and dataset:
+            for ref in self._current_project.dataset_refs:
+                if ref.dataset_id == dataset.id:
+                    ref.display_name = new_display_name
+                    break
+
         # Mark project as modified if charts were updated
         if charts_updated > 0 and self._current_project:
             self._set_modified(True)
@@ -1062,15 +1071,19 @@ class SnPViewerMainWindow(QMainWindow):
                         # Generate user-friendly dataset name from filename (without extension)
                         user_friendly_name = file_path.stem
 
-                        # Create dataset with the stored UUID for internal tracking
-                        dataset = touchstone_to_dataset(touchstone_data, dataset_ref.dataset_id)
+                        # Create dataset with the correct file path
+                        dataset = touchstone_to_dataset(touchstone_data, str(file_path))
 
                         if dataset:
+                            # Restore the saved display_name from the project if available
+                            if dataset_ref.display_name:
+                                dataset.display_name = dataset_ref.display_name
+
                             # Store mapping from UUID to user-friendly name
                             uuid_to_friendly_name[dataset_ref.dataset_id] = user_friendly_name
 
-                            # Add dataset with user-friendly name for display
-                            self._main_panels.dataset_browser.add_dataset(user_friendly_name, dataset)
+                            # Add dataset with UUID as key (not user-friendly name)
+                            self._main_panels.dataset_browser.add_dataset(dataset.id, dataset)
                             datasets_loaded += 1
                         else:
                             datasets_failed += 1
@@ -1446,10 +1459,6 @@ class SnPViewerMainWindow(QMainWindow):
             if self._current_project is None:
                 self._new_project()
 
-            # Generate user-friendly dataset name from full filename (including extension)
-            # This ensures unique names when files have same stem but different extensions
-            user_friendly_name = Path(file_path).name
-
             # Keep the dataset's UUID for internal tracking
             dataset_uuid = dataset.id
 
@@ -1459,14 +1468,15 @@ class SnPViewerMainWindow(QMainWindow):
                     dataset_id=dataset_uuid,  # Store UUID in project
                     file_path=file_path,
                     file_name=Path(file_path).name,
+                    display_name=dataset.display_name,  # Save the display name
                     last_modified=dataset.file_modified,
                     file_size=Path(file_path).stat().st_size if Path(file_path).exists() else None,
                     load_status='loaded'
                 )
                 self._current_project.add_dataset_ref(dataset_ref)
 
-            # Add dataset to browser with user-friendly name for display
-            self._main_panels.dataset_browser.add_dataset(user_friendly_name, dataset)
+            # Add dataset to browser with dataset UUID as the key
+            self._main_panels.dataset_browser.add_dataset(dataset.id, dataset)
 
             # Emit signal
             self.file_opened.emit(file_path)
@@ -1529,7 +1539,7 @@ class SnPViewerMainWindow(QMainWindow):
                 )
 
                 # Set the dataset name for tab title generation
-                display_name = tab_title if tab_title else dataset.file_name
+                display_name = tab_title if tab_title else dataset.display_name
 
                 chart_widget.set_chart_tab_title(display_name)
 

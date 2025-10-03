@@ -27,7 +27,8 @@ class Dataset:
     Attributes:
         id: Unique identifier for this dataset (stable hash of path+mtime+size)
         file_path: Full path to the Touchstone file
-        file_name: Display name of the file (basename)
+        file_name: Original filename (basename)
+        display_name: User-customizable display name for UI (defaults to file_name without extension)
         n_ports: Number of ports in the network
         frequency_hz: Frequency points in Hz (converted from file units)
         version: Touchstone version ('v1' or 'v2')
@@ -51,6 +52,7 @@ class Dataset:
     ref_impedance: float
     data_format: str
     s_params: np.ndarray
+    display_name: str = ""
     loaded_at: datetime = field(default_factory=datetime.now)
     file_size: Optional[int] = None
     file_modified: Optional[datetime] = None
@@ -96,6 +98,12 @@ class Dataset:
             hasher.update(file_modified.isoformat().encode('utf-8'))
 
         return hasher.hexdigest()[:16]  # Use first 16 chars for readability
+
+    def __post_init__(self):
+        """Initialize display_name if not set."""
+        if not self.display_name:
+            # Use file_name without extension as default display_name
+            self.display_name = Path(self.file_name).stem
 
     def get_frequency_range(self) -> tuple[float, float]:
         """
@@ -266,6 +274,7 @@ class Dataset:
             'id': self.id,
             'file_path': self.file_path,
             'file_name': self.file_name,
+            'display_name': self.display_name,
             'n_ports': self.n_ports,
             'version': self.version,
             'units': self.units,

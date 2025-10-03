@@ -51,7 +51,7 @@ class TraceSelectionDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Info label
-        info_label = QLabel(f"Dataset: {self._dataset.file_name}")
+        info_label = QLabel(f"Dataset: {self._dataset.display_name}")
         info_label.setStyleSheet("font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(info_label)
 

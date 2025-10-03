@@ -761,8 +761,8 @@ class ChartView(QWidget):
         # Update the dataset file_name for all traces from this dataset
         for trace_id, dataset in self._datasets.items():
             if dataset.id == dataset_id:
-                # Update the dataset's file_name
-                dataset.file_name = new_name
+                # Update the dataset's display_name
+                dataset.display_name = new_name
 
                 # Refresh the legend entry for this trace
                 if trace_id in self._plot_items and trace_id in self._traces:

@@ -21,7 +21,8 @@ class DatasetRef:
     Attributes:
         dataset_id: Unique identifier for the dataset
         file_path: Path to the Touchstone file (relative preferred, absolute fallback)
-        file_name: Display name of the file
+        file_name: Original filename (basename)
+        display_name: User-customizable display name (defaults to file_name without extension)
         last_modified: Last modification time for change detection
         file_size: File size for integrity checks
         load_status: Current loading status ('loaded', 'missing', 'error')
@@ -30,6 +31,7 @@ class DatasetRef:
     dataset_id: str
     file_path: str
     file_name: str
+    display_name: str = ""
     last_modified: Optional[datetime] = None
     file_size: Optional[int] = None
     load_status: str = 'unknown'
@@ -243,6 +245,7 @@ class Project:
                     'dataset_id': ref.dataset_id,
                     'file_path': ref.file_path,
                     'file_name': ref.file_name,
+                    'display_name': ref.display_name,
                     'last_modified': ref.last_modified.isoformat() if ref.last_modified else None,
                     'file_size': ref.file_size,
                     'load_status': ref.load_status,
@@ -278,6 +281,7 @@ class Project:
                 dataset_id=ref_data['dataset_id'],
                 file_path=ref_data['file_path'],
                 file_name=ref_data['file_name'],
+                display_name=ref_data.get('display_name', ''),
                 last_modified=last_modified,
                 file_size=ref_data.get('file_size'),
                 load_status=ref_data.get('load_status', 'unknown'),

@@ -108,6 +108,7 @@ class PathResolver:
                 dataset_id=ref.dataset_id,
                 file_path=absolute_path,
                 file_name=ref.file_name,
+                display_name=ref.display_name,
                 last_modified=ref.last_modified,
                 file_size=ref.file_size,
                 load_status='found' if file_exists else 'missing',

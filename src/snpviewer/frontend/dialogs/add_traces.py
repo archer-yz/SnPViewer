@@ -108,9 +108,9 @@ class AddTracesDialog(QDialog):
                                   if dataset_obj is dataset or trace_dataset_id == dataset_id)
 
                 if trace_count > 0:
-                    display_name = f"{dataset.file_name} ({dataset.n_ports}p) - {trace_count} traces"
+                    display_name = f"{dataset.display_name} ({dataset.n_ports}p) - {trace_count} traces"
                 else:
-                    display_name = f"{dataset.file_name} ({dataset.n_ports}p)"
+                    display_name = f"{dataset.display_name} ({dataset.n_ports}p)"
 
                 self._dataset_combo.addItem(display_name, dataset_id)
 
