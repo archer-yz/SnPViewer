@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pyqtgraph as pg
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
-from PySide6.QtGui import QAction, QContextMenuEvent, QFont
+from PySide6.QtGui import QAction, QContextMenuEvent, QFont, QColor
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy,
                                QVBoxLayout, QWidget)
 
@@ -1390,17 +1390,28 @@ class ChartView(QWidget):
             try:
                 if isinstance(font_info, dict) and 'family' in font_info:
                     # Reconstruct QFont from serialized data
-                    font = QFont(font_info['family'], font_info.get('pointSize', 10))
+                    family = font_info['family']
+                    point_size = font_info.get('pointSize', 10)
 
-                    # Handle weight safely
-                    weight = font_info.get('weight', QFont.Weight.Normal)
-                    if isinstance(weight, int):
-                        font.setWeight(QFont.Weight(weight))
-                    else:
-                        font.setWeight(weight)
+                    # Create font with family and size
+                    font = QFont(family, point_size)
 
-                    font.setItalic(font_info.get('italic', False))
-                    font.setBold(font_info.get('bold', False))
+                    # Set italic first (before weight/bold)
+                    if font_info.get('italic', False):
+                        font.setItalic(True)
+
+                    # Handle weight - use the saved weight value directly
+                    # Don't use both setWeight and setBold as they conflict
+                    if 'weight' in font_info:
+                        weight = font_info['weight']
+                        if isinstance(weight, int):
+                            font.setWeight(QFont.Weight(weight))
+                        else:
+                            font.setWeight(weight)
+                    elif font_info.get('bold', False):
+                        # If no weight but bold is True, set bold weight
+                        font.setWeight(QFont.Weight.Bold)
+
                     self._chart_fonts[key] = font
                 else:
                     self._chart_fonts[key] = font_info
@@ -2693,11 +2704,33 @@ class ChartView(QWidget):
         if self._chart_colors and self._chart_fonts:
             # Apply both color and font
             if 'title' in self._chart_colors and 'title' in self._chart_fonts:
+                font = self._chart_fonts['title']
+                color = self._chart_colors['title']
+
+                # Use setTitle with color and size parameters
                 self._plot_item.setTitle(
                     title,
-                    color=self._chart_colors['title'],
-                    size=f"{self._chart_fonts['title'].pointSize()}pt"
+                    color=color,
+                    size=f"{font.pointSize()}pt"
                 )
+
+                # Then access the title label to set the complete font
+                # This ensures family, weight, and italic are applied
+                title_label = self._plot_item.titleLabel
+                if title_label and hasattr(title_label, 'item'):
+                    try:
+                        # Apply the complete font (family, size, weight, italic)
+                        title_label.item.setFont(font)
+
+                        # Reapply color as QColor to ensure it's set correctly
+                        if isinstance(color, str):
+                            qcolor = QColor(color)
+                        else:
+                            qcolor = color
+                        title_label.item.setDefaultTextColor(qcolor)
+                    except Exception as e:
+                        # If direct font setting fails, at least we have size and color from setTitle
+                        print(f"Warning: Could not apply full title font styling: {e}")
                 return
 
         # Fallback to basic title

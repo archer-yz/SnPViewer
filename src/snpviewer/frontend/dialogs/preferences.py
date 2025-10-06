@@ -158,14 +158,25 @@ class PreferencesDialog(QDialog):
             for element in ['title', 'x_axis', 'y_axis', 'x_ticks', 'y_ticks', 'legend']:
                 font_data = default_fonts.get(element, {})
                 if font_data and 'family' in font_data:
-                    font = QFont(
-                        font_data.get('family', 'Arial'),
-                        font_data.get('pointSize', 10)
-                    )
-                    if font_data.get('bold', False):
-                        font.setBold(True)
+                    family = font_data.get('family', 'Arial')
+                    point_size = font_data.get('pointSize', 10)
+
+                    # Create font with family and size
+                    font = QFont(family, point_size)
+
+                    # Set italic first
                     if font_data.get('italic', False):
                         font.setItalic(True)
+
+                    # Handle weight - use the saved weight value directly
+                    # Don't use both setWeight and setBold as they conflict
+                    if 'weight' in font_data:
+                        weight = font_data['weight']
+                        font.setWeight(QFont.Weight(weight))
+                    elif font_data.get('bold', False):
+                        # If no weight but bold is True, set bold weight
+                        font.setWeight(QFont.Weight.Bold)
+
                     fonts[element] = font
             self._font_widget.set_fonts(fonts)
 
