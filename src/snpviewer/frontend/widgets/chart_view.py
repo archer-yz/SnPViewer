@@ -329,6 +329,10 @@ class ChartView(QWidget):
                     # Fallback if plot data generation fails
                     fallback_name = trace.label if trace.label else trace_id
                     trace_combo.addItem(fallback_name, trace_id)
+            else:
+                # No dataset (e.g., linear phase error traces) - use trace label
+                trace_name = trace.label if trace.label else trace_id
+                trace_combo.addItem(trace_name, trace_id)
 
         trace_layout.addWidget(trace_label)
         trace_layout.addWidget(trace_combo)
@@ -748,7 +752,7 @@ class ChartView(QWidget):
             plot_item.setVisible(trace.style.visible)
 
             # Connect double-click signal for trace properties
-            plot_item.sigClicked.connect(lambda item=plot_item, tid=trace_id: self._on_trace_clicked(tid, item))
+            plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
 
             # Store reference
             self._plot_items[trace_id] = plot_item
@@ -1158,10 +1162,18 @@ class ChartView(QWidget):
                 - intercept: Fit intercept
                 - equation: Fit equation string
                 - freq_start, freq_end: Frequency range limits
+                - trace_id: Trace identifier
+                - dataset_id: Dataset identifier
+                - i_port, j_port: Port indices
         """
+        from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+
         freq = config['frequency']
         error = config['error']
-        equation = config['equation']
+        trace_id = config.get('trace_id', '')
+        dataset_id = config.get('dataset_id', '')
+        i_port = config.get('i_port', 0)
+        j_port = config.get('j_port', 0)
 
         # Store the configuration
         self._linear_phase_error_config = config
@@ -1170,10 +1182,84 @@ class ChartView(QWidget):
         # Clear existing items
         self._plot_item.clear()
         self._legend.clear()
+        self._traces.clear()
+        self._plot_items.clear()
 
-        # Plot error
-        pen_error = pg.mkPen(color='g', width=2)
-        self._plot_item.plot(freq, error, pen=pen_error, name=f"{config['dataset_name']}: {config['sparam']}")
+        # Get or create trace style from config
+        if 'trace_style' in config:
+            saved_style = config['trace_style']
+            # Check if it's already a TraceStyle object or needs to be created from dict
+            if isinstance(saved_style, TraceStyle):
+                style = saved_style
+            elif isinstance(saved_style, dict):
+                # Reconstruct TraceStyle from dictionary
+                style = TraceStyle(
+                    color=saved_style.get('color', '#00AA00'),
+                    line_width=saved_style.get('line_width', 2),
+                    line_style=saved_style.get('line_style', 'solid'),
+                    marker_style=saved_style.get('marker_style', 'none'),
+                    marker_size=saved_style.get('marker_size', 8),
+                    visible=saved_style.get('visible', True)
+                )
+            else:
+                # Fallback to default
+                style = TraceStyle(
+                    color='#00AA00',
+                    line_width=2,
+                    line_style='solid',
+                    marker_style='none'
+                )
+        else:
+            # Default style for linear phase error
+            style = TraceStyle(
+                color='#00AA00',  # Green
+                line_width=2,
+                line_style='solid',
+                marker_style='none'
+            )
+
+        # Create a Trace object for the linear phase error plot
+        trace_label = f"{config.get('dataset_name', 'Unknown')}: {config.get('sparam', 'S11')} Linear Phase Error"
+
+        trace = Trace(
+            id=trace_id,
+            dataset_id=dataset_id,
+            domain="S",
+            metric="linear_phase_error",
+            port_path=PortPath(i=i_port+1, j=j_port+1),
+            style=style,
+            label=trace_label
+        )
+
+        # Store trace
+        self._traces[trace_id] = trace
+        # Plot error with trace style
+        pen_error = pg.mkPen(
+            color=style.color,
+            width=style.line_width,
+            style=self._get_pen_style(style.line_style)
+        )
+
+        symbol = self._get_symbol(style.marker_style)
+        symbol_size = style.marker_size
+
+        plot_item = self._plot_item.plot(
+            freq, error,
+            pen=pen_error,
+            symbol=symbol,
+            symbolSize=symbol_size,
+            name=f"{config['dataset_name']}: {config['sparam']}"
+        )
+
+        # Make plot item clickable for trace properties
+        plot_item.curve.setClickable(True, width=10)  # width is the click tolerance in pixels
+
+        # Connect click signal for trace properties
+        # Note: sigClicked signal passes event/item but we ignore it and use captured trace_id
+        plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
+
+        # Store plot item reference
+        self._plot_items[trace_id] = plot_item
 
         # # Add zero reference line
         # pen_zero = pg.mkPen(color='k', width=1, style=Qt.PenStyle.DashLine)
@@ -1194,6 +1280,9 @@ class ChartView(QWidget):
         self._plot_item.setXRange(freq_start, freq_end, padding=0.02)
         self._plot_item.enableAutoRange(axis='y')
 
+        # Apply legend styling if available
+        self._apply_legend_styling()
+
     def get_existing_trace_ids(self) -> List[str]:
         """Get list of existing trace IDs in this chart."""
         return list(self._traces.keys())
@@ -1202,10 +1291,16 @@ class ChartView(QWidget):
         """Get dictionary of existing traces with their details."""
         existing_traces = {}
         for trace_id, trace in self._traces.items():
-            dataset = self._datasets[trace_id]
-            # Use dataset.id as the authoritative dataset ID rather than trace.dataset_id
-            # to ensure consistency when matching in dialogs
-            existing_traces[trace_id] = (dataset.id, trace, dataset)
+            # Check if this trace has a dataset (regular traces do, linear phase error doesn't)
+            if trace_id in self._datasets:
+                dataset = self._datasets[trace_id]
+                # Use dataset.id as the authoritative dataset ID rather than trace.dataset_id
+                # to ensure consistency when matching in dialogs
+                existing_traces[trace_id] = (dataset.id, trace, dataset)
+            else:
+                # For traces without datasets (e.g., linear phase error), use trace's dataset_id
+                # and None for dataset object
+                existing_traces[trace_id] = (trace.dataset_id, trace, None)
         return existing_traces
 
     def _show_add_traces_dialog(self) -> None:
@@ -1608,7 +1703,26 @@ class ChartView(QWidget):
         """Get linear phase error configuration for serialization."""
         if not hasattr(self, '_linear_phase_error_config'):
             return None
-        return self._linear_phase_error_config
+
+        import numpy as np
+
+        # Make a copy of the config
+        config = self._linear_phase_error_config.copy()
+
+        # Convert numpy arrays to lists for JSON serialization
+        if isinstance(config.get('frequency'), np.ndarray):
+            config['frequency'] = config['frequency'].tolist()
+        if isinstance(config.get('error'), np.ndarray):
+            config['error'] = config['error'].tolist()
+
+        # Update with current trace style if trace exists
+        trace_id = config.get('trace_id', '')
+        if trace_id and trace_id in self._traces:
+            trace = self._traces[trace_id]
+            # Store trace style as dict for JSON serialization
+            config['trace_style'] = trace.style.to_dict()
+
+        return config
 
     def restore_linear_phase_error_config(self, config: Dict[str, Any]) -> None:
         """Restore linear phase error configuration from saved data."""
@@ -2081,104 +2195,7 @@ class ChartView(QWidget):
 
     def _on_trace_clicked(self, trace_id: str, plot_item) -> None:
         """Handle trace click for selection and properties."""
-        # Direct click on trace - open properties dialog
-        self._show_trace_properties_dialog(trace_id)
-
-    def _show_trace_properties_dialog(self, trace_id: str) -> None:
-        """Show trace properties dialog to modify color, style, and weight."""
-        if trace_id not in self._traces:
-            return
-
-        trace = self._traces[trace_id]
-
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import (QColorDialog, QComboBox, QDialog,
-                                       QHBoxLayout, QLabel, QPushButton,
-                                       QSpinBox, QVBoxLayout)
-
-        dialog = QDialog(self)
-        trace_name = trace.label if trace.label else trace_id
-        dialog.setWindowTitle(f"Trace Properties - {trace_name}")
-        dialog.setModal(True)
-        dialog.resize(300, 200)
-
-        layout = QVBoxLayout(dialog)
-
-        # Color selection
-        color_layout = QHBoxLayout()
-        color_label = QLabel("Color:")
-        color_button = QPushButton()
-        color_button.setFixedSize(50, 30)
-
-        # Set current color
-        current_color = QColor(trace.style.color)
-        color_button.setStyleSheet(f"background-color: {current_color.name()}; border: 1px solid black;")
-
-        def choose_color():
-            color = QColorDialog.getColor(current_color, dialog, "Choose Trace Color")
-            if color.isValid():
-                color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
-                color_button.color = color.name()
-
-        color_button.clicked.connect(choose_color)
-        color_button.color = current_color.name()  # Store current color
-
-        color_layout.addWidget(color_label)
-        color_layout.addWidget(color_button)
-        color_layout.addStretch()
-        layout.addLayout(color_layout)
-
-        # Line style selection
-        style_layout = QHBoxLayout()
-        style_label = QLabel("Line Style:")
-        style_combo = QComboBox()
-        style_combo.addItems(["solid", "dashed", "dotted", "dashdot"])
-        style_combo.setCurrentText(trace.style.line_style)
-
-        style_layout.addWidget(style_label)
-        style_layout.addWidget(style_combo)
-        style_layout.addStretch()
-        layout.addLayout(style_layout)
-
-        # Line width selection
-        width_layout = QHBoxLayout()
-        width_label = QLabel("Line Width:")
-        width_spin = QSpinBox()
-        width_spin.setMinimum(1)
-        width_spin.setMaximum(10)
-        width_spin.setValue(int(trace.style.line_width))
-
-        width_layout.addWidget(width_label)
-        width_layout.addWidget(width_spin)
-        width_layout.addStretch()
-        layout.addLayout(width_layout)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-        ok_button = QPushButton("OK")
-        cancel_button = QPushButton("Cancel")
-
-        button_layout.addStretch()
-        button_layout.addWidget(ok_button)
-        button_layout.addWidget(cancel_button)
-        layout.addLayout(button_layout)
-
-        # Connect buttons
-        ok_button.clicked.connect(dialog.accept)
-        cancel_button.clicked.connect(dialog.reject)
-
-        # Show dialog and apply changes if accepted
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Update trace style
-            trace.style.color = color_button.color
-            trace.style.line_style = style_combo.currentText()
-            trace.style.line_width = float(width_spin.value())
-
-            # Refresh the plot item with new style
-            self._update_trace_style(trace_id)
-
-            # Emit signal to notify that properties changed
-            self.properties_changed.emit()
+        self._show_trace_selection_dialog()
 
     def _update_trace_style(self, trace_id: str) -> None:
         """Update the visual style of a trace."""
@@ -2195,8 +2212,14 @@ class ChartView(QWidget):
             style=self._get_pen_style(trace.style.line_style)
         )
 
-        # Update the plot item
+        # Update the plot item pen
         plot_item.setPen(pen)
+
+        # Update markers if they exist
+        symbol = self._get_symbol(trace.style.marker_style)
+        symbol_size = trace.style.marker_size
+        plot_item.setSymbol(symbol)
+        plot_item.setSymbolSize(symbol_size)
 
     def _update_limit_line_style(self, line_id: str) -> None:
         """Update the visual style of a limit line."""

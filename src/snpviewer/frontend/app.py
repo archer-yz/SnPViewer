@@ -694,7 +694,7 @@ class SnPViewerMainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error Saving Project",
-                f"Failed to save project to '{file_path}':\n\n{str(e)}"
+                f"Failed to save project to '{file_path}':\n\n{str(e)}\n\nCheck console for details."
             )
             return False
 
@@ -1488,9 +1488,6 @@ class SnPViewerMainWindow(QMainWindow):
         except (IndexError, ValueError):
             return False
 
-        # Generate a unique trace ID
-        trace_id = f"{dataset.id}_S{port_i}{port_j}_{uuid.uuid4().hex[:8]}"
-
         # Check if this trace already exists in the chart (by looking at existing traces)
         if hasattr(chart_widget, '_traces'):
             for existing_trace_id, existing_trace in chart_widget._traces.items():
@@ -1502,8 +1499,16 @@ class SnPViewerMainWindow(QMainWindow):
                     # Trace already exists, skip silently
                     return False
 
-        # Determine the metric based on chart type
+        # Determine the chart type string for trace ID and the metric based on chart type
         chart_type = getattr(chart_widget, '_plot_type', None)
+        if chart_type:
+            chart_type_str = chart_type.value  # Get enum value (e.g., "magnitude", "phase")
+        else:
+            chart_type_str = "magnitude"  # Default
+
+        # Generate trace ID using standardized format: dataset_id:S{i},{j}_{chart_type}
+        trace_id = f"{dataset.id}:S{port_i},{port_j}_{chart_type_str}"
+
         if chart_type:
             # For ChartView, map plot type to metric
             from snpviewer.frontend.widgets.chart_view import PlotType
