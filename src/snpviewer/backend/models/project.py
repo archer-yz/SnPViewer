@@ -52,6 +52,9 @@ class Preferences:
         marker_snap_enabled: Whether markers snap to data points by default
         grid_enabled: Whether to show grid on charts by default
         legend_position: Default legend position ('top', 'bottom', 'left', 'right')
+        default_chart_fonts: Default font settings for chart elements
+        default_chart_colors: Default color settings for chart elements
+        default_plot_area_settings: Default plot area styling (background, border, grid)
     """
     units: str = 'Hz'
     theme: str = 'light'
@@ -61,6 +64,9 @@ class Preferences:
     marker_snap_enabled: bool = True
     grid_enabled: bool = True
     legend_position: str = 'right'
+    default_chart_fonts: Dict[str, Any] = field(default_factory=dict)
+    default_chart_colors: Dict[str, str] = field(default_factory=dict)
+    default_plot_area_settings: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert preferences to dictionary for serialization."""
@@ -72,7 +78,10 @@ class Preferences:
             'default_port_impedance': self.default_port_impedance,
             'marker_snap_enabled': self.marker_snap_enabled,
             'grid_enabled': self.grid_enabled,
-            'legend_position': self.legend_position
+            'legend_position': self.legend_position,
+            'default_chart_fonts': self.default_chart_fonts,
+            'default_chart_colors': self.default_chart_colors,
+            'default_plot_area_settings': self.default_plot_area_settings
         }
 
     @classmethod
@@ -86,7 +95,10 @@ class Preferences:
             default_port_impedance=data.get('default_port_impedance', 50.0),
             marker_snap_enabled=data.get('marker_snap_enabled', True),
             grid_enabled=data.get('grid_enabled', True),
-            legend_position=data.get('legend_position', 'right')
+            legend_position=data.get('legend_position', 'right'),
+            default_chart_fonts=data.get('default_chart_fonts', {}),
+            default_chart_colors=data.get('default_chart_colors', {}),
+            default_plot_area_settings=data.get('default_plot_area_settings', {})
         )
 
 

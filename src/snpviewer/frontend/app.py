@@ -526,16 +526,25 @@ class SnPViewerMainWindow(QMainWindow):
             print(f"Warning: Error clearing project state: {e}")
 
     def _new_project(self) -> None:
-        """Create a new project."""
+        """Create a new project with user's saved preferences."""
         if not self._check_unsaved_changes():
             return
 
         # Clear current project state first
         self._clear_current_project()
 
+        # Load user's persistent preferences if available
+        saved_prefs = self._settings.value("user_preferences", None)
+        if saved_prefs and isinstance(saved_prefs, dict):
+            # Use user's saved preferences
+            preferences = Preferences.from_dict(saved_prefs)
+        else:
+            # Use default preferences
+            preferences = Preferences()
+
         self._current_project = Project(
             name="Untitled Project",
-            preferences=Preferences()
+            preferences=preferences
         )
         self._current_project_path = None
         self._set_modified(False)
@@ -546,7 +555,7 @@ class SnPViewerMainWindow(QMainWindow):
         self._enable_project_actions(True)
         self._update_window_title()
 
-        self.statusBar().showMessage("New project created", 2000)
+        self.statusBar().showMessage("New project created with your preferences", 2000)
 
     def _open_project(self) -> None:
         """Open an existing project file."""
@@ -869,6 +878,9 @@ class SnPViewerMainWindow(QMainWindow):
                 # Add chart to charts area with dataset tracking
                 self._main_panels.charts_area.add_chart(chart_id, chart, chart_widget, dataset_id)
 
+                # Apply default styling from preferences
+                self._apply_default_chart_styling(chart_widget)
+
                 # Add selected traces to chart
                 self._add_selected_traces(chart_widget, dataset, selected_traces, chart_type)
 
@@ -888,6 +900,34 @@ class SnPViewerMainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Chart Creation Error", f"Failed to create chart: {str(e)}")
+
+    def _apply_default_chart_styling(self, chart_widget: ChartView | SmithView) -> None:
+        """
+        Apply default chart styling from preferences to a newly created chart.
+
+        Args:
+            chart_widget: The chart widget to apply styling to
+        """
+        if not self._current_project or not self._current_project.preferences:
+            return
+
+        preferences = self._current_project.preferences
+
+        try:
+            # Apply default font styling if ChartView has the methods
+            if hasattr(chart_widget, 'restore_chart_fonts') and preferences.default_chart_fonts:
+                chart_widget.restore_chart_fonts(preferences.default_chart_fonts)
+
+            # Apply default color styling
+            if hasattr(chart_widget, 'restore_chart_colors') and preferences.default_chart_colors:
+                chart_widget.restore_chart_colors(preferences.default_chart_colors)
+
+            # Apply default plot area settings
+            if hasattr(chart_widget, 'restore_plot_area_settings') and preferences.default_plot_area_settings:
+                chart_widget.restore_plot_area_settings(preferences.default_plot_area_settings)
+
+        except Exception as e:
+            print(f"Warning: Could not apply default chart styling: {e}")
 
     def _add_selected_traces(self, chart_widget: ChartView | SmithView, dataset: Dataset,
                              selected_traces, chart_type: str) -> None:
@@ -1173,6 +1213,9 @@ class SnPViewerMainWindow(QMainWindow):
 
         # Add chart to charts area with the widget
         self._main_panels.charts_area.add_chart(chart_id, chart, chart_widget)
+
+        # Apply default styling from preferences
+        self._apply_default_chart_styling(chart_widget)
 
         # Add all traces to the chart
         for trace_id, trace, dataset_id in traces_data:
@@ -1763,12 +1806,44 @@ class SnPViewerMainWindow(QMainWindow):
 
     # Dialog Methods
     def _show_preferences(self) -> None:
-        """Show preferences dialog."""
-        QMessageBox.information(
-            self,
-            "Preferences",
-            "Preferences dialog will be implemented in a future version."
-        )
+        """Show preferences dialog with persistent storage."""
+        from snpviewer.frontend.dialogs.preferences import PreferencesDialog
+
+        # Load preferences from persistent storage or project
+        if self._current_project and self._current_project.preferences:
+            # Use project preferences if available
+            prefs_dict = self._current_project.preferences.to_dict()
+        else:
+            # Load from persistent application settings
+            saved_prefs = self._settings.value("user_preferences", None)
+            if saved_prefs and isinstance(saved_prefs, dict):
+                # User has saved preferences - use them
+                prefs_dict = saved_prefs
+            else:
+                # No saved preferences - use defaults
+                prefs_dict = Preferences().to_dict()
+
+        # Show preferences dialog
+        dialog = PreferencesDialog(prefs_dict, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Get updated preferences
+            updated_prefs = dialog.get_preferences()
+
+            # Always save to persistent application settings
+            self._settings.setValue("user_preferences", updated_prefs)
+            self._settings.sync()  # Force write to disk
+
+            # Also update project preferences if project is open
+            if self._current_project:
+                self._current_project.preferences = Preferences.from_dict(updated_prefs)
+                self._set_modified(True)
+                self.statusBar().showMessage(
+                    "Preferences updated and saved (applied to current project)", 3000
+                )
+            else:
+                self.statusBar().showMessage(
+                    "Preferences saved (will apply to new charts)", 3000
+                )
 
     def _show_about(self) -> None:
         """Show about dialog."""
