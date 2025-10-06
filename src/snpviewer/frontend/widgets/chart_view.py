@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pyqtgraph as pg
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
-from PySide6.QtGui import QAction, QContextMenuEvent, QFont, QColor
+from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy,
                                QVBoxLayout, QWidget)
 
@@ -92,7 +92,17 @@ class ChartView(QWidget):
         # Add status bar for cursor coordinates
         self._status_layout = QHBoxLayout()
         self._cursor_label = QLabel("Ready")
-        self._cursor_label.setStyleSheet("QLabel { color: #666; font-size: 10px; }")
+        self._cursor_label.setStyleSheet(
+            "QLabel { "
+            "color: #333; "
+            "font-size: 11px; "
+            "font-family: 'Consolas', 'Courier New', monospace; "
+            "padding: 2px 5px; "
+            "background-color: #f0f0f0; "
+            "border: 1px solid #ccc; "
+            "border-radius: 3px; "
+            "}"
+        )
         self._status_layout.addWidget(self._cursor_label)
         self._status_layout.addStretch()
 
@@ -614,13 +624,43 @@ class ChartView(QWidget):
             self._crosshair_v.setPos(x)
             self._crosshair_h.setPos(y)
 
-            # Update status bar
-            self._cursor_label.setText(f"x: {x:.3f} {self._x_axis_unit}, y: {y:.3f}")
+            # Format x value with appropriate units
+            # PyQtGraph automatically scales Hz to kHz, MHz, GHz with SI prefixes
+            x_formatted = self._format_frequency_value(x)
+
+            # Format y value based on plot type
+            y_formatted = self._format_y_value(y)
+
+            # Update status bar with formatted values
+            self._cursor_label.setText(f"X: {x_formatted} | Y: {y_formatted}")
         else:
             # Hide crosshairs when outside plot area
             self._crosshair_v.setPos(float('inf'))
             self._crosshair_h.setPos(float('inf'))
             self._cursor_label.setText("Ready")
+
+    def _format_frequency_value(self, freq: float) -> str:
+        """Format frequency value with appropriate SI prefix."""
+        abs_freq = abs(freq)
+        if abs_freq >= 1e9:
+            return f"{freq/1e9:.3f} GHz"
+        elif abs_freq >= 1e6:
+            return f"{freq/1e6:.3f} MHz"
+        elif abs_freq >= 1e3:
+            return f"{freq/1e3:.3f} kHz"
+        else:
+            return f"{freq:.3f} Hz"
+
+    def _format_y_value(self, y: float) -> str:
+        """Format y value based on current plot type."""
+        if self._plot_type == PlotType.MAGNITUDE:
+            return f"{y:.3f} dB"
+        elif self._plot_type == PlotType.PHASE:
+            return f"{y:.2f}°"
+        elif self._plot_type == PlotType.GROUP_DELAY:
+            return f"{y:.3f} ns"
+        else:
+            return f"{y:.3f}"
 
     def _on_view_changed(self) -> None:
         """Handle view change events."""
@@ -2545,12 +2585,13 @@ class ChartView(QWidget):
                 self._plot_item.setLabel(axis_name, text)
 
             # Apply stored styling if available
-            if self._chart_colors and 'x_axis' in self._chart_colors:
+            if self._chart_colors and ('x_axis' in self._chart_colors or 'x_ticks' in self._chart_colors):
                 try:
                     bottom_axis = self._plot_item.getAxis('bottom')
                     # Use the simple method that worked before
                     if units:
-                        bottom_axis.setLabel(text, units=units, color=self._chart_colors['x_axis'])
+                        bottom_axis.setLabel(text, units=units, color=self._chart_colors.get(
+                            'x_ticks', self._chart_colors.get('x_axis', '#000000')))
                     else:
                         bottom_axis.setLabel(text, color=self._chart_colors['x_axis'])
 
@@ -2566,11 +2607,12 @@ class ChartView(QWidget):
             self._plot_item.setLabel(axis_name, text)
 
             # Apply stored styling if available
-            if self._chart_colors and 'y_axis' in self._chart_colors:
+            if self._chart_colors and ('y_axis' in self._chart_colors or 'y_ticks' in self._chart_colors):
                 try:
                     left_axis = self._plot_item.getAxis('left')
                     # Use the simple method that worked before
-                    left_axis.setLabel(text, color=self._chart_colors['y_axis'])
+                    left_axis.setLabel(text, color=self._chart_colors.get(
+                        'y_ticks', self._chart_colors.get('y_axis', '#000000')))
 
                     # Apply font if available
                     if (self._chart_fonts and 'y_axis' in self._chart_fonts and

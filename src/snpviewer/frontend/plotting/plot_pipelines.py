@@ -245,7 +245,7 @@ def prepare_group_delay_data(trace: Trace, dataset) -> PlotData:
         dataset: Dataset containing S-parameter data
 
     Returns:
-        PlotData ready for plotting
+        PlotData ready for plotting (group delay in nanoseconds)
     """
     freq = get_frequency_array(dataset, unit='Hz')
     s_param = _extract_s_parameter(dataset.s_params, trace)
@@ -253,8 +253,14 @@ def prepare_group_delay_data(trace: Trace, dataset) -> PlotData:
     # Get phase in radians
     phase = convert_s_to_phase(s_param, degrees=False)
 
+    # Unwrap phase
+    phase = unwrap_phase(phase)
+
     # Compute group delay
     group_delay = compute_group_delay(freq, phase)
+
+    # Convert from seconds to nanoseconds for better readability
+    group_delay_ns = group_delay * 1e9
 
     # Frequency array for group delay (one point shorter)
     freq_gd = (freq[:-1] + freq[1:]) / 2  # Midpoint frequencies
@@ -266,11 +272,11 @@ def prepare_group_delay_data(trace: Trace, dataset) -> PlotData:
 
     return PlotData(
         x=freq_gd,
-        y=group_delay,
+        y=group_delay_ns,
         plot_type=PlotType.GROUP_DELAY,
         label=label,
         units_x="Hz",
-        units_y="s"
+        units_y="ns"
     )
 
 
