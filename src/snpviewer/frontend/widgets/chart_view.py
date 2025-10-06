@@ -50,6 +50,7 @@ class ChartView(QWidget):
         self._plot_type = PlotType.MAGNITUDE
         self._x_axis_unit = 'Hz'  # PyQtGraph will automatically scale and add appropriate prefix
         self._y_axis_label = 'Magnitude (dB)'
+        self._phase_unwrap = True  # Default to unwrapped phase
 
         # Separate titles for different purposes
         self._chart_title = "S-Parameter Plot"  # Plot widget title (user-editable, no restrictions)
@@ -164,6 +165,21 @@ class ChartView(QWidget):
         self._phase_action.setCheckable(True)
         self._phase_action.triggered.connect(lambda: self.set_plot_type(PlotType.PHASE))
         plot_type_menu.addAction(self._phase_action)
+
+        # Phase options submenu
+        phase_options_menu = plot_type_menu.addMenu("Phase Options")
+
+        self._phase_unwrap_action = QAction("Unwrap Phase", self)
+        self._phase_unwrap_action.setCheckable(True)
+        self._phase_unwrap_action.setChecked(True)
+        self._phase_unwrap_action.triggered.connect(self._toggle_phase_unwrap)
+        phase_options_menu.addAction(self._phase_unwrap_action)
+
+        phase_options_menu.addSeparator()
+
+        self._linear_phase_error_action = QAction("Linear Phase Error Analysis...", self)
+        self._linear_phase_error_action.triggered.connect(self._show_linear_phase_error_dialog)
+        phase_options_menu.addAction(self._linear_phase_error_action)
 
         self._group_delay_action = QAction("Group Delay", self)
         self._group_delay_action.setCheckable(True)
@@ -871,7 +887,7 @@ class ChartView(QWidget):
             if self._plot_type == PlotType.MAGNITUDE:
                 return prepare_magnitude_data(trace, dataset)
             elif self._plot_type == PlotType.PHASE:
-                return prepare_phase_data(trace, dataset)
+                return prepare_phase_data(trace, dataset, unwrap=self._phase_unwrap)
             elif self._plot_type == PlotType.GROUP_DELAY:
                 return prepare_group_delay_data(trace, dataset)
             else:
@@ -1099,6 +1115,33 @@ class ChartView(QWidget):
 
         if ok and new_name.strip():
             self.set_tab_title(new_name.strip())
+
+    def _toggle_phase_unwrap(self) -> None:
+        """Toggle phase unwrap option and refresh if in phase mode."""
+        self._phase_unwrap = self._phase_unwrap_action.isChecked()
+
+        # If we're currently displaying phase, refresh all traces
+        if self._plot_type == PlotType.PHASE:
+            self._refresh_all_traces()
+
+    def _show_linear_phase_error_dialog(self) -> None:
+        """Show the linear phase error analysis dialog."""
+        if not self._datasets:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "No Data",
+                "No datasets are available. Please load data first."
+            )
+            return
+
+        # Import the dialog class
+        from snpviewer.frontend.dialogs.linear_phase_error import \
+            LinearPhaseErrorDialog
+
+        # Create and show the dialog
+        dialog = LinearPhaseErrorDialog(self._datasets, parent=self)
+        dialog.exec()
 
     def get_existing_trace_ids(self) -> List[str]:
         """Get list of existing trace IDs in this chart."""
