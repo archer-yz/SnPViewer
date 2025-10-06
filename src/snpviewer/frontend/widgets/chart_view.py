@@ -2082,11 +2082,10 @@ class ChartView(QWidget):
 
     def _show_font_styling_dialog(self) -> None:
         """Show font styling dialog for chart elements."""
-        from PySide6.QtGui import QColor, QFont
-        from PySide6.QtWidgets import (QColorDialog, QDialog, QFontDialog,
-                                       QGroupBox, QHBoxLayout, QLabel,
-                                       QPushButton, QTabWidget, QVBoxLayout,
-                                       QWidget)
+        from PySide6.QtWidgets import (QDialog, QHBoxLayout, QPushButton,
+                                       QTabWidget, QVBoxLayout)
+
+        from snpviewer.frontend.dialogs.common_dialogs import FontStylingWidget
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Font Styling")
@@ -2095,131 +2094,8 @@ class ChartView(QWidget):
 
         layout = QVBoxLayout(dialog)
 
-        # Create tab widget for different chart elements
-        tab_widget = QTabWidget()
-
-        # Chart Title Tab
-        title_tab = QWidget()
-        title_layout = QVBoxLayout(title_tab)
-
-        title_group = QGroupBox("Chart Title Font")
-        title_group_layout = QVBoxLayout(title_group)
-
-        # Title font selection
-        title_font_layout = QHBoxLayout()
-        title_font_button = QPushButton("Choose Font...")
-        title_font_button.setFixedHeight(35)
-        title_color_button = QPushButton()
-        title_color_button.setFixedSize(50, 35)
-        title_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-
-        title_font_layout.addWidget(QLabel("Font:"))
-        title_font_layout.addWidget(title_font_button)
-        title_font_layout.addWidget(QLabel("Color:"))
-        title_font_layout.addWidget(title_color_button)
-        title_font_layout.addStretch()
-        title_group_layout.addLayout(title_font_layout)
-
-        title_layout.addWidget(title_group)
-        title_layout.addStretch()
-        tab_widget.addTab(title_tab, "Chart Title")
-
-        # X & Y Axes Tab (combined labels and ticks)
-        axes_tab = QWidget()
-        axes_layout = QVBoxLayout(axes_tab)
-
-        # X-axis group (label font + tick font & color)
-        x_axis_group = QGroupBox("X-Axis (Label + Ticks)")
-        x_axis_group_layout = QVBoxLayout(x_axis_group)
-
-        # X-axis label font (no color - controlled by tick color)
-        x_label_layout = QHBoxLayout()
-        x_font_button = QPushButton("Choose Label Font...")
-        x_font_button.setFixedHeight(35)
-        x_label_layout.addWidget(QLabel("Label Font:"))
-        x_label_layout.addWidget(x_font_button)
-        x_label_layout.addStretch()
-        x_axis_group_layout.addLayout(x_label_layout)
-
-        # X-axis tick font and color (controls both ticks and label color)
-        x_tick_layout = QHBoxLayout()
-        x_tick_font_button = QPushButton("Choose Tick Font...")
-        x_tick_font_button.setFixedHeight(35)
-        x_tick_color_button = QPushButton()
-        x_tick_color_button.setFixedSize(50, 35)
-        x_tick_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-        x_tick_color_button.setToolTip("Controls color of both tick numbers and axis label")
-
-        x_tick_layout.addWidget(QLabel("Tick Font & Color:"))
-        x_tick_layout.addWidget(x_tick_font_button)
-        x_tick_layout.addWidget(QLabel("Color:"))
-        x_tick_layout.addWidget(x_tick_color_button)
-        x_tick_layout.addStretch()
-        x_axis_group_layout.addLayout(x_tick_layout)
-
-        # Y-axis group (label font + tick font & color)
-        y_axis_group = QGroupBox("Y-Axis (Label + Ticks)")
-        y_axis_group_layout = QVBoxLayout(y_axis_group)
-
-        # Y-axis label font (no color - controlled by tick color)
-        y_label_layout = QHBoxLayout()
-        y_font_button = QPushButton("Choose Label Font...")
-        y_font_button.setFixedHeight(35)
-        y_label_layout.addWidget(QLabel("Label Font:"))
-        y_label_layout.addWidget(y_font_button)
-        y_label_layout.addStretch()
-        y_axis_group_layout.addLayout(y_label_layout)
-
-        # Y-axis tick font and color (controls both ticks and label color)
-        y_tick_layout = QHBoxLayout()
-        y_tick_font_button = QPushButton("Choose Tick Font...")
-        y_tick_font_button.setFixedHeight(35)
-        y_tick_color_button = QPushButton()
-        y_tick_color_button.setFixedSize(50, 35)
-        y_tick_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-        y_tick_color_button.setToolTip("Controls color of both tick numbers and axis label")
-
-        y_tick_layout.addWidget(QLabel("Tick Font & Color:"))
-        y_tick_layout.addWidget(y_tick_font_button)
-        y_tick_layout.addWidget(QLabel("Color:"))
-        y_tick_layout.addWidget(y_tick_color_button)
-        y_tick_layout.addStretch()
-        y_axis_group_layout.addLayout(y_tick_layout)
-
-        axes_layout.addWidget(x_axis_group)
-        axes_layout.addWidget(y_axis_group)
-        axes_layout.addStretch()
-        tab_widget.addTab(axes_tab, "X & Y Axes")
-
-        # Legend Tab
-        legend_tab = QWidget()
-        legend_layout = QVBoxLayout(legend_tab)
-
-        legend_group = QGroupBox("Legend Font")
-        legend_group_layout = QVBoxLayout(legend_group)
-
-        legend_font_layout = QHBoxLayout()
-        legend_font_button = QPushButton("Choose Font...")
-        legend_font_button.setFixedHeight(35)
-        legend_color_button = QPushButton()
-        legend_color_button.setFixedSize(50, 35)
-        legend_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-        legend_color_button.setToolTip("Change legend text color")
-
-        legend_font_layout.addWidget(QLabel("Font:"))
-        legend_font_layout.addWidget(legend_font_button)
-        legend_font_layout.addWidget(QLabel("Color:"))
-        legend_font_layout.addWidget(legend_color_button)
-        legend_font_layout.addStretch()
-        legend_group_layout.addLayout(legend_font_layout)
-
-        legend_layout.addWidget(legend_group)
-        legend_layout.addStretch()
-        tab_widget.addTab(legend_tab, "Legend")
-
-        layout.addWidget(tab_widget)
-
         # Load existing stored fonts and colors, or use defaults
+        from PySide6.QtGui import QFont
         current_fonts = {
             'title': QFont("Arial", 12, QFont.Weight.Bold),
             'x_axis': QFont("Arial", 10),
@@ -2245,116 +2121,13 @@ class ChartView(QWidget):
         if hasattr(self, '_chart_colors') and self._chart_colors:
             current_colors.update(self._chart_colors)
 
-        # Helper function to format font info with style details
-        def format_font_info(font):
-            """Format font information with family, size, weight, and italic status."""
-            style_parts = []
-
-            # Add weight information
-            if font.weight() >= QFont.Weight.Bold.value:
-                style_parts.append("Bold")
-
-            # Add italic information
-            if font.italic():
-                style_parts.append("Italic")
-
-            # Combine style info
-            style_str = ", ".join(style_parts)
-            if style_str:
-                return f"{font.family()}, {font.pointSize()}pt, {style_str}"
-            else:
-                return f"{font.family()}, {font.pointSize()}pt"
-
-        # Font selection handlers
-        def choose_title_font():
-            # QFontDialog.getFont returns (ok, font) not (font, ok)
-            ok, selected_font = QFontDialog.getFont(current_fonts['title'], dialog, "Choose Title Font")
-            if ok:
-                current_fonts['title'] = selected_font
-                title_font_button.setText(format_font_info(selected_font))
-
-        def choose_x_axis_font():
-            ok, selected_font = QFontDialog.getFont(current_fonts['x_axis'], dialog, "Choose X-Axis Font")
-            if ok:
-                current_fonts['x_axis'] = selected_font
-                x_font_button.setText(format_font_info(selected_font))
-
-        def choose_y_axis_font():
-            ok, selected_font = QFontDialog.getFont(current_fonts['y_axis'], dialog, "Choose Y-Axis Font")
-            if ok:
-                current_fonts['y_axis'] = selected_font
-                y_font_button.setText(format_font_info(selected_font))
-
-        def choose_x_tick_font():
-            ok, selected_font = QFontDialog.getFont(current_fonts['x_ticks'], dialog, "Choose X-Tick Font")
-            if ok:
-                current_fonts['x_ticks'] = selected_font
-                x_tick_font_button.setText(format_font_info(selected_font))
-
-        def choose_y_tick_font():
-            ok, selected_font = QFontDialog.getFont(current_fonts['y_ticks'], dialog, "Choose Y-Tick Font")
-            if ok:
-                current_fonts['y_ticks'] = selected_font
-                y_tick_font_button.setText(format_font_info(selected_font))
-
-        def choose_legend_font():
-            ok, selected_font = QFontDialog.getFont(current_fonts['legend'], dialog, "Choose Legend Font")
-            if ok:
-                current_fonts['legend'] = selected_font
-                legend_font_button.setText(format_font_info(selected_font))
-
-        # Color selection handlers
-        def choose_title_color():
-            color = QColorDialog.getColor(QColor(current_colors['title']), dialog, "Choose Title Color")
-            if color.isValid():
-                current_colors['title'] = color.name()
-                title_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid gray;")
-
-        def choose_x_tick_color():
-            color = QColorDialog.getColor(QColor(current_colors['x_ticks']), dialog, "Choose X-Tick Color")
-            if color.isValid():
-                current_colors['x_ticks'] = color.name()
-                x_tick_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid gray;")
-
-        def choose_y_tick_color():
-            color = QColorDialog.getColor(QColor(current_colors['y_ticks']), dialog, "Choose Y-Tick Color")
-            if color.isValid():
-                current_colors['y_ticks'] = color.name()
-                y_tick_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid gray;")
-
-        def choose_legend_color():
-            color = QColorDialog.getColor(QColor(current_colors['legend']), dialog, "Choose Legend Color")
-            if color.isValid():
-                current_colors['legend'] = color.name()
-                legend_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid gray;")
-
-        # Connect handlers
-        title_font_button.clicked.connect(choose_title_font)
-        title_color_button.clicked.connect(choose_title_color)
-        x_font_button.clicked.connect(choose_x_axis_font)
-        # x_color_button is disabled - no connection needed
-        y_font_button.clicked.connect(choose_y_axis_font)
-        # y_color_button is disabled - no connection needed
-        x_tick_font_button.clicked.connect(choose_x_tick_font)
-        x_tick_color_button.clicked.connect(choose_x_tick_color)
-        y_tick_font_button.clicked.connect(choose_y_tick_font)
-        y_tick_color_button.clicked.connect(choose_y_tick_color)
-        legend_font_button.clicked.connect(choose_legend_font)
-        legend_color_button.clicked.connect(choose_legend_color)
-
-        # Initialize button texts with detailed font information
-        title_font_button.setText(format_font_info(current_fonts['title']))
-        x_font_button.setText(format_font_info(current_fonts['x_axis']))
-        y_font_button.setText(format_font_info(current_fonts['y_axis']))
-        x_tick_font_button.setText(format_font_info(current_fonts['x_ticks']))
-        y_tick_font_button.setText(format_font_info(current_fonts['y_ticks']))
-        legend_font_button.setText(format_font_info(current_fonts['legend']))
-
-        # Initialize color buttons with loaded colors
-        title_color_button.setStyleSheet(f"background-color: {current_colors['title']}; border: 1px solid gray;")
-        x_tick_color_button.setStyleSheet(f"background-color: {current_colors['x_ticks']}; border: 1px solid gray;")
-        y_tick_color_button.setStyleSheet(f"background-color: {current_colors['y_ticks']}; border: 1px solid gray;")
-        legend_color_button.setStyleSheet(f"background-color: {current_colors['legend']}; border: 1px solid gray;")
+        # Create font styling widget with current settings
+        font_widget = FontStylingWidget(
+            initial_fonts=current_fonts,
+            initial_colors=current_colors,
+            parent=dialog
+        )
+        layout.addWidget(font_widget)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -2372,73 +2145,45 @@ class ChartView(QWidget):
         button_layout.addWidget(cancel_button)
         layout.addLayout(button_layout)
 
+        # Get the tab widget from the font_widget to determine current tab
+        tab_widget = font_widget.findChild(QTabWidget)
+
         # Apply styling function for current tab only
         def apply_current_tab():
-            current_tab_index = tab_widget.currentIndex()
+            current_tab_index = tab_widget.currentIndex() if tab_widget else 0
+            fonts = font_widget.get_fonts()
+            colors = font_widget.get_colors()
 
             if current_tab_index == 0:  # Chart Title tab
-                self._apply_title_styling(current_fonts['title'], current_colors['title'])
+                self._apply_title_styling(fonts['title'], colors['title'])
             elif current_tab_index == 1:  # X & Y Axes tab (combined)
-                self._apply_combined_axes_styling(current_fonts, current_colors)
+                self._apply_combined_axes_styling(fonts, colors)
             elif current_tab_index == 2:  # Legend tab
-                self._apply_legend_styling_with_color(current_fonts['legend'], current_colors['legend'])
+                self._apply_legend_styling_with_color(fonts['legend'], colors['legend'])
 
         # Apply all styling function (for OK button)
         def apply_all_styling():
-            self._apply_chart_fonts(current_fonts, current_colors)
+            fonts = font_widget.get_fonts()
+            colors = font_widget.get_colors()
+            self._apply_chart_fonts(fonts, colors)
             # Emit signal to notify that properties changed
             self.properties_changed.emit()
-
-        # Reset function
-        def reset_to_defaults():
-            # Reset to default fonts and colors
-            current_fonts.update({
-                'title': QFont("Arial", 12, QFont.Weight.Bold),
-                'x_axis': QFont("Arial", 10),
-                'y_axis': QFont("Arial", 10),
-                'x_ticks': QFont("Arial", 9),
-                'y_ticks': QFont("Arial", 9),
-                'legend': QFont("Arial", 9)
-            })
-            current_colors.update({
-                'title': '#000000',
-                'x_axis': '#000000',
-                'y_axis': '#000000',
-                'x_ticks': '#000000',
-                'y_ticks': '#000000',
-                'legend': '#000000'
-            })
-
-            # Update button displays with detailed font information
-            title_font_button.setText(format_font_info(current_fonts['title']))
-            x_font_button.setText(format_font_info(current_fonts['x_axis']))
-            y_font_button.setText(format_font_info(current_fonts['y_axis']))
-            x_tick_font_button.setText(format_font_info(current_fonts['x_ticks']))
-            y_tick_font_button.setText(format_font_info(current_fonts['y_ticks']))
-            legend_font_button.setText(format_font_info(current_fonts['legend']))
-
-            # Reset color buttons (all enabled ones)
-            title_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-            x_tick_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-            y_tick_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-            legend_color_button.setStyleSheet("background-color: black; border: 1px solid gray;")
-            # Only axis label color buttons remain disabled
 
         # Connect buttons
         apply_button.clicked.connect(apply_current_tab)
         ok_button.clicked.connect(lambda: (apply_all_styling(), dialog.accept()))
         cancel_button.clicked.connect(dialog.reject)
-        reset_button.clicked.connect(reset_to_defaults)
+        reset_button.clicked.connect(font_widget.reset_to_defaults)
 
         dialog.exec()
 
     def _show_plot_area_properties_dialog(self) -> None:
         """Show plot area properties dialog for customizing borders, background, grid, etc."""
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox,
-                                       QDialog, QGroupBox, QHBoxLayout, QLabel,
-                                       QPushButton, QSpinBox, QTabWidget,
-                                       QVBoxLayout, QWidget)
+        from PySide6.QtWidgets import (QDialog, QHBoxLayout, QPushButton,
+                                       QVBoxLayout)
+
+        from snpviewer.frontend.dialogs.common_dialogs import \
+            PlotAreaPropertiesWidget
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Plot Area Properties")
@@ -2447,176 +2192,29 @@ class ChartView(QWidget):
 
         layout = QVBoxLayout(dialog)
 
-        # Create tabs for different property categories
-        tab_widget = QTabWidget()
+        # Load existing settings or use defaults
+        current_settings = {
+            'background_color': 'white',
+            'border_type': 'standard',
+            'show_top_right_labels': False,
+            'border_color': '#333333',
+            'border_style': 'solid',
+            'border_width': 1,
+            'show_grid_x': True,
+            'show_grid_y': True,
+            'grid_alpha': 0.3
+        }
 
-        # Tab 1: Background & Borders
-        bg_border_tab = QWidget()
-        bg_border_layout = QVBoxLayout(bg_border_tab)
+        # Update with existing settings if available
+        if self._plot_area_settings:
+            current_settings.update(self._plot_area_settings)
 
-        # Background section
-        bg_group = QGroupBox("Background")
-        bg_layout = QVBoxLayout(bg_group)
-
-        # Background color
-        bg_color_layout = QHBoxLayout()
-        bg_color_label = QLabel("Background Color:")
-        bg_color_button = QPushButton()
-        bg_color_button.setFixedSize(50, 30)
-
-        # Get current background color
-        current_bg = self._plot_area_settings.get('background_color', 'white') if self._plot_area_settings else 'white'
-        bg_color = QColor(current_bg)
-        bg_color_button.setStyleSheet(f"background-color: {bg_color.name()}; border: 1px solid black;")
-        bg_color_button.current_color = bg_color.name()
-
-        def choose_bg_color():
-            color = QColorDialog.getColor(QColor(bg_color_button.current_color), dialog, "Choose Background Color")
-            if color.isValid():
-                bg_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
-                bg_color_button.current_color = color.name()
-
-        bg_color_button.clicked.connect(choose_bg_color)
-
-        bg_color_layout.addWidget(bg_color_label)
-        bg_color_layout.addWidget(bg_color_button)
-        bg_color_layout.addStretch()
-        bg_layout.addLayout(bg_color_layout)
-
-        bg_border_layout.addWidget(bg_group)
-
-        # Border section
-        border_group = QGroupBox("Plot Area Border")
-        border_layout = QVBoxLayout(border_group)
-
-        # Border type selection
-        border_type_layout = QHBoxLayout()
-        border_type_label = QLabel("Border Type:")
-        border_type_combo = QComboBox()
-        border_type_combo.addItems(["Standard (Left & Bottom)", "Full Border (All Sides)", "No Border"])
-
-        # Default to standard border (left+bottom only)
-        current_border_type = self._plot_area_settings.get(
-            'border_type', 'standard') if self._plot_area_settings else 'standard'
-        if current_border_type == 'full':
-            border_type_combo.setCurrentIndex(1)
-        elif current_border_type == 'none':
-            border_type_combo.setCurrentIndex(2)
-        else:  # 'standard'
-            border_type_combo.setCurrentIndex(0)
-
-        border_type_layout.addWidget(border_type_label)
-        border_type_layout.addWidget(border_type_combo)
-        border_type_layout.addStretch()
-        border_layout.addLayout(border_type_layout)
-
-        # Show tick labels on top/right (only relevant for full border)
-        show_tick_labels_check = QCheckBox("Show Tick Labels on Top & Right")
-        current_show_tick_labels = self._plot_area_settings.get(
-            'show_top_right_labels', False) if self._plot_area_settings else False
-        show_tick_labels_check.setChecked(current_show_tick_labels)
-        border_layout.addWidget(show_tick_labels_check)
-
-        # Border color
-        border_color_layout = QHBoxLayout()
-        border_color_label = QLabel("Border Color:")
-        border_color_button = QPushButton()
-        border_color_button.setFixedSize(50, 30)
-
-        current_border_color = self._plot_area_settings.get(
-            'border_color', '#333333') if self._plot_area_settings else '#333333'
-        border_color = QColor(current_border_color)
-        border_color_button.setStyleSheet(f"background-color: {border_color.name()}; border: 1px solid black;")
-        border_color_button.current_color = border_color.name()
-
-        def choose_border_color():
-            color = QColorDialog.getColor(QColor(border_color_button.current_color), dialog, "Choose Border Color")
-            if color.isValid():
-                border_color_button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
-                border_color_button.current_color = color.name()
-
-        border_color_button.clicked.connect(choose_border_color)
-
-        border_color_layout.addWidget(border_color_label)
-        border_color_layout.addWidget(border_color_button)
-        border_color_layout.addStretch()
-        border_layout.addLayout(border_color_layout)
-
-        # Border style
-        border_style_layout = QHBoxLayout()
-        border_style_label = QLabel("Border Style:")
-        border_style_combo = QComboBox()
-        border_style_combo.addItems(["solid", "dashed", "dotted", "dashdot"])
-        current_border_style = self._plot_area_settings.get(
-            'border_style', 'solid') if self._plot_area_settings else 'solid'
-        border_style_combo.setCurrentText(current_border_style)
-
-        border_style_layout.addWidget(border_style_label)
-        border_style_layout.addWidget(border_style_combo)
-        border_style_layout.addStretch()
-        border_layout.addLayout(border_style_layout)
-
-        # Border width
-        border_width_layout = QHBoxLayout()
-        border_width_label = QLabel("Border Width:")
-        border_width_spin = QSpinBox()
-        border_width_spin.setMinimum(1)
-        border_width_spin.setMaximum(10)
-        current_border_width = self._plot_area_settings.get('border_width', 1) if self._plot_area_settings else 1
-        border_width_spin.setValue(current_border_width)
-
-        border_width_layout.addWidget(border_width_label)
-        border_width_layout.addWidget(border_width_spin)
-        border_width_layout.addStretch()
-        border_layout.addLayout(border_width_layout)
-
-        border_group.setLayout(border_layout)
-        bg_border_layout.addWidget(border_group)
-
-        tab_widget.addTab(bg_border_tab, "Background & Borders")
-
-        # Tab 2: Grid
-        grid_tab = QWidget()
-        grid_layout = QVBoxLayout(grid_tab)
-
-        # Grid visibility
-        grid_group = QGroupBox("Grid Lines")
-        grid_group_layout = QVBoxLayout(grid_group)
-
-        # Show grid checkboxes
-        show_grid_x_check = QCheckBox("Show X-axis Grid")
-        show_grid_y_check = QCheckBox("Show Y-axis Grid")
-        current_show_grid_x = self._plot_area_settings.get('show_grid_x', True) if self._plot_area_settings else True
-        current_show_grid_y = self._plot_area_settings.get('show_grid_y', True) if self._plot_area_settings else True
-        show_grid_x_check.setChecked(current_show_grid_x)
-        show_grid_y_check.setChecked(current_show_grid_y)
-
-        grid_group_layout.addWidget(show_grid_x_check)
-        grid_group_layout.addWidget(show_grid_y_check)
-
-        # Grid color (currently disabled - PyQtGraph doesn't easily support custom grid colors)
-        # TODO: Implement grid color customization when PyQtGraph supports it better
-
-        # Grid alpha (transparency)
-        grid_alpha_layout = QHBoxLayout()
-        grid_alpha_label = QLabel("Grid Transparency:")
-        grid_alpha_spin = QSpinBox()
-        grid_alpha_spin.setMinimum(10)
-        grid_alpha_spin.setMaximum(100)
-        grid_alpha_spin.setSuffix("%")
-        current_grid_alpha = int(self._plot_area_settings.get('grid_alpha', 0.3)
-                                 * 100) if self._plot_area_settings else 30
-        grid_alpha_spin.setValue(current_grid_alpha)
-
-        grid_alpha_layout.addWidget(grid_alpha_label)
-        grid_alpha_layout.addWidget(grid_alpha_spin)
-        grid_alpha_layout.addStretch()
-        grid_group_layout.addLayout(grid_alpha_layout)
-
-        grid_layout.addWidget(grid_group)
-        tab_widget.addTab(grid_tab, "Grid")
-
-        layout.addWidget(tab_widget)
+        # Create plot area properties widget with current settings
+        plot_widget = PlotAreaPropertiesWidget(
+            initial_settings=current_settings,
+            parent=dialog
+        )
+        layout.addWidget(plot_widget)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -2634,19 +2232,8 @@ class ChartView(QWidget):
 
         # Button handlers
         def apply_plot_area_settings():
-            # Collect all settings
-            border_type_map = {0: 'standard', 1: 'full', 2: 'none'}
-            settings = {
-                'background_color': bg_color_button.current_color,
-                'border_type': border_type_map[border_type_combo.currentIndex()],
-                'show_top_right_labels': show_tick_labels_check.isChecked(),
-                'border_color': border_color_button.current_color,
-                'border_style': border_style_combo.currentText(),
-                'border_width': border_width_spin.value(),
-                'show_grid_x': show_grid_x_check.isChecked(),
-                'show_grid_y': show_grid_y_check.isChecked(),
-                'grid_alpha': grid_alpha_spin.value() / 100.0
-            }
+            # Get settings from widget
+            settings = plot_widget.get_settings()
 
             # Store settings
             self._plot_area_settings = settings
@@ -2657,24 +2244,11 @@ class ChartView(QWidget):
             # Emit signal to notify that properties changed
             self.properties_changed.emit()
 
-        def reset_to_defaults():
-            # Reset to default values
-            bg_color_button.current_color = 'white'
-            bg_color_button.setStyleSheet("background-color: white; border: 1px solid black;")
-            border_type_combo.setCurrentIndex(0)  # Standard border
-            show_tick_labels_check.setChecked(False)
-            border_color_button.current_color = '#333333'
-            border_color_button.setStyleSheet("background-color: #333333; border: 1px solid black;")
-            border_style_combo.setCurrentText('solid')
-            border_width_spin.setValue(1)
-            show_grid_x_check.setChecked(True)
-            show_grid_y_check.setChecked(True)
-            grid_alpha_spin.setValue(30)
-
+        # Connect buttons
         apply_button.clicked.connect(apply_plot_area_settings)
         ok_button.clicked.connect(lambda: (apply_plot_area_settings(), dialog.accept()))
         cancel_button.clicked.connect(dialog.reject)
-        reset_button.clicked.connect(reset_to_defaults)
+        reset_button.clicked.connect(plot_widget.reset_to_defaults)
 
         dialog.exec()
 
