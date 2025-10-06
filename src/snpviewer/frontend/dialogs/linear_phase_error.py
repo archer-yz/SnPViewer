@@ -10,10 +10,11 @@ from typing import Dict, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QDialog, QDoubleSpinBox, QFormLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QPushButton,
-                               QSplitter, QTextEdit, QVBoxLayout, QWidget)
+                               QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QPushButton, QSplitter, QTextEdit, QVBoxLayout,
+                               QWidget)
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.frontend.plotting.plot_pipelines import (convert_s_to_phase,
@@ -27,11 +28,15 @@ class LinearPhaseErrorDialog(QDialog):
 
     Features:
     - Dataset and S-parameter selection
-    - Frequency range selection
+    - Frequency range selection (with unit support)
     - Two subplots: unwrapped phase with fit, and error plot
     - Interactive fit parameter adjustment
     - Comprehensive error statistics
+    - Create chart from error plot
     """
+
+    # Signal emitted when user wants to create a chart from error data
+    create_chart_requested = Signal(dict)  # Emits chart configuration
 
     def __init__(self, datasets: Dict[str, Dataset], parent: Optional[QWidget] = None):
         """
@@ -84,6 +89,11 @@ class LinearPhaseErrorDialog(QDialog):
         self._analyze_button.clicked.connect(self._perform_analysis)
         button_layout.addWidget(self._analyze_button)
 
+        self._create_chart_button = QPushButton("Create Chart from Error")
+        self._create_chart_button.clicked.connect(self._create_error_chart)
+        self._create_chart_button.setEnabled(False)  # Disabled until analysis is done
+        button_layout.addWidget(self._create_chart_button)
+
         self._close_button = QPushButton("Close")
         self._close_button.clicked.connect(self.accept)
         button_layout.addWidget(self._close_button)
@@ -104,23 +114,36 @@ class LinearPhaseErrorDialog(QDialog):
         self._sparam_combo = QComboBox()
         layout.addRow("S-Parameter:", self._sparam_combo)
 
-        # Frequency range
+        # Frequency range with unit support
         freq_layout = QHBoxLayout()
-        self._freq_start_spin = QDoubleSpinBox()
-        self._freq_start_spin.setDecimals(3)
-        self._freq_start_spin.setRange(0, 1e12)
-        self._freq_start_spin.setSuffix(" Hz")
-        self._freq_start_spin.setMinimumWidth(150)
-        freq_layout.addWidget(self._freq_start_spin)
+
+        # Start frequency
+        start_layout = QHBoxLayout()
+        self._freq_start_input = QLineEdit()
+        self._freq_start_input.setPlaceholderText("e.g., 1e9, 1G, 1000M")
+        self._freq_start_input.setMinimumWidth(120)
+        start_layout.addWidget(self._freq_start_input)
+
+        self._freq_start_unit = QComboBox()
+        self._freq_start_unit.addItems(["Hz", "kHz", "MHz", "GHz", "THz"])
+        self._freq_start_unit.setCurrentText("GHz")
+        start_layout.addWidget(self._freq_start_unit)
+        freq_layout.addLayout(start_layout)
 
         freq_layout.addWidget(QLabel("to"))
 
-        self._freq_end_spin = QDoubleSpinBox()
-        self._freq_end_spin.setDecimals(3)
-        self._freq_end_spin.setRange(0, 1e12)
-        self._freq_end_spin.setSuffix(" Hz")
-        self._freq_end_spin.setMinimumWidth(150)
-        freq_layout.addWidget(self._freq_end_spin)
+        # End frequency
+        end_layout = QHBoxLayout()
+        self._freq_end_input = QLineEdit()
+        self._freq_end_input.setPlaceholderText("e.g., 10e9, 10G, 10000M")
+        self._freq_end_input.setMinimumWidth(120)
+        end_layout.addWidget(self._freq_end_input)
+
+        self._freq_end_unit = QComboBox()
+        self._freq_end_unit.addItems(["Hz", "kHz", "MHz", "GHz", "THz"])
+        self._freq_end_unit.setCurrentText("GHz")
+        end_layout.addWidget(self._freq_end_unit)
+        freq_layout.addLayout(end_layout)
 
         freq_layout.addStretch()
         layout.addRow("Frequency Range:", freq_layout)
@@ -179,10 +202,19 @@ class LinearPhaseErrorDialog(QDialog):
         self._intercept_spin.valueChanged.connect(self._on_fit_parameter_changed)
         fit_layout.addRow("Intercept (°):", self._intercept_spin)
 
-        # Fit equation display
+        # Fit equation display with theme-friendly styling
         self._equation_label = QLabel("Phase = slope × f + intercept")
         self._equation_label.setWordWrap(True)
-        self._equation_label.setStyleSheet("padding: 5px; background-color: #f0f0f0; border: 1px solid #ccc;")
+        self._equation_label.setStyleSheet("""
+            QLabel {
+                padding: 8px;
+                border: 1px solid palette(mid);
+                border-radius: 4px;
+                background-color: palette(base);
+                font-family: 'Courier New', 'Consolas', monospace;
+                font-size: 10pt;
+            }
+        """)
         fit_layout.addRow("Equation:", self._equation_label)
 
         # Residual info
@@ -211,10 +243,10 @@ class LinearPhaseErrorDialog(QDialog):
         """Populate the dataset combo box."""
         self._dataset_combo.clear()
 
-        for trace_id, dataset in self._datasets.items():
+        for dataset_id, dataset in self._datasets.items():
             display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
             # Store both display name and trace_id
-            self._dataset_combo.addItem(display_name, trace_id)
+            self._dataset_combo.addItem(display_name, dataset_id)
 
         if self._dataset_combo.count() > 0:
             self._on_dataset_changed(0)
@@ -224,11 +256,11 @@ class LinearPhaseErrorDialog(QDialog):
         if index < 0:
             return
 
-        trace_id = self._dataset_combo.currentData()
-        if not trace_id or trace_id not in self._datasets:
+        dataset_id = self._dataset_combo.currentData()
+        if not dataset_id or dataset_id not in self._datasets:
             return
 
-        dataset = self._datasets[trace_id]
+        dataset = self._datasets[dataset_id]
 
         # Populate S-parameter combo
         self._sparam_combo.clear()
@@ -239,22 +271,73 @@ class LinearPhaseErrorDialog(QDialog):
 
             for i in range(n_ports):
                 for j in range(n_ports):
-                    self._sparam_combo.addItem(f"S{i+1}{j+1}", (i, j))
+                    self._sparam_combo.addItem(f"S{i+1},{j+1}", (i, j))
 
-        # Set frequency range to full range
+        # Set frequency range to full range and populate input fields
         if hasattr(dataset, 'frequency') and dataset.frequency is not None:
             freq = get_frequency_array(dataset, unit='Hz')
-            self._freq_start_spin.setValue(float(freq[0]))
-            self._freq_end_spin.setValue(float(freq[-1]))
+            freq_start_hz = float(freq[0])
+            freq_end_hz = float(freq[-1])
+
+            # Auto-select appropriate unit and display value
+            self._set_frequency_display(self._freq_start_input, self._freq_start_unit, freq_start_hz)
+            self._set_frequency_display(self._freq_end_input, self._freq_end_unit, freq_end_hz)
+
+    def _set_frequency_display(self, input_widget: QLineEdit, unit_widget: QComboBox, freq_hz: float) -> None:
+        """Set frequency display with appropriate unit."""
+        # Choose the most appropriate unit
+        if freq_hz >= 1e12:
+            unit_widget.setCurrentText("THz")
+            input_widget.setText(f"{freq_hz / 1e12:.6g}")
+        elif freq_hz >= 1e9:
+            unit_widget.setCurrentText("GHz")
+            input_widget.setText(f"{freq_hz / 1e9:.6g}")
+        elif freq_hz >= 1e6:
+            unit_widget.setCurrentText("MHz")
+            input_widget.setText(f"{freq_hz / 1e6:.6g}")
+        elif freq_hz >= 1e3:
+            unit_widget.setCurrentText("kHz")
+            input_widget.setText(f"{freq_hz / 1e3:.6g}")
+        else:
+            unit_widget.setCurrentText("Hz")
+            input_widget.setText(f"{freq_hz:.6g}")
+
+    def _parse_frequency(self, text: str, unit: str) -> float:
+        """
+        Parse frequency from text and unit, supporting scientific notation.
+
+        Args:
+            text: Frequency value text (may contain scientific notation)
+            unit: Unit string (Hz, kHz, MHz, GHz, THz)
+
+        Returns:
+            Frequency in Hz
+        """
+        try:
+            # Parse the numeric value (handles scientific notation)
+            value = float(text.strip())
+
+            # Convert to Hz based on unit
+            multipliers = {
+                'Hz': 1,
+                'kHz': 1e3,
+                'MHz': 1e6,
+                'GHz': 1e9,
+                'THz': 1e12
+            }
+
+            return value * multipliers.get(unit, 1)
+        except ValueError:
+            raise ValueError(f"Invalid frequency value: {text}")
 
     def _perform_analysis(self) -> None:
         """Perform the linear phase error analysis."""
         # Get selected dataset
-        trace_id = self._dataset_combo.currentData()
-        if not trace_id or trace_id not in self._datasets:
+        dataset_id = self._dataset_combo.currentData()
+        if not dataset_id or dataset_id not in self._datasets:
             return
 
-        dataset = self._datasets[trace_id]
+        dataset = self._datasets[dataset_id]
 
         # Get S-parameter indices
         sparam_data = self._sparam_combo.currentData()
@@ -263,9 +346,29 @@ class LinearPhaseErrorDialog(QDialog):
 
         i_port, j_port = sparam_data
 
-        # Get frequency range
-        freq_start = self._freq_start_spin.value()
-        freq_end = self._freq_end_spin.value()
+        # Get frequency range with error handling
+        try:
+            freq_start = self._parse_frequency(
+                self._freq_start_input.text(),
+                self._freq_start_unit.currentText()
+            )
+            freq_end = self._parse_frequency(
+                self._freq_end_input.text(),
+                self._freq_end_unit.currentText()
+            )
+        except ValueError as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Frequency", str(e))
+            return
+
+        if freq_start >= freq_end:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Invalid Range",
+                "Start frequency must be less than end frequency."
+            )
+            return
 
         # Extract data
         freq = get_frequency_array(dataset, unit='Hz')
@@ -280,6 +383,7 @@ class LinearPhaseErrorDialog(QDialog):
 
         if len(freq_filtered) < 2:
             self._stats_text.setText("Error: Insufficient data points in selected frequency range.")
+            self._create_chart_button.setEnabled(False)
             return
 
         # Compute unwrapped phase in degrees
@@ -291,12 +395,23 @@ class LinearPhaseErrorDialog(QDialog):
         slope = coeffs[0]
         intercept = coeffs[1]
 
+        # Get dataset and S-parameter info for later chart creation
+        display_name = getattr(dataset, 'display_name', getattr(dataset, 'file_name', 'Unknown'))
+        sparam_label = f"S{i_port+1},{j_port+1}"
+
         # Store current data
         self._current_data = {
             'frequency': freq_filtered,
             'phase': phase,
             'slope': slope,
-            'intercept': intercept
+            'intercept': intercept,
+            'dataset_name': display_name,
+            'sparam': sparam_label,
+            'dataset_id': dataset_id,
+            'i_port': i_port,
+            'j_port': j_port,
+            'freq_start': freq_start,
+            'freq_end': freq_end
         }
 
         # Update spinboxes (without triggering update)
@@ -309,6 +424,9 @@ class LinearPhaseErrorDialog(QDialog):
 
         # Update plots and statistics
         self._update_visualization()
+
+        # Enable the create chart button
+        self._create_chart_button.setEnabled(True)
 
     def _on_fit_parameter_changed(self) -> None:
         """Handle manual adjustment of fit parameters."""
@@ -339,7 +457,7 @@ class LinearPhaseErrorDialog(QDialog):
         phase_error = phase - phase_fit
 
         # Update equation label
-        self._equation_label.setText(f"Phase = {slope:.6e} × f + {intercept:.3f}")
+        self._equation_label.setText(f"Phase = {slope:.8e} × f + {intercept:.3f}")
 
         # Calculate R²
         ss_res = np.sum(phase_error ** 2)
@@ -397,3 +515,56 @@ class LinearPhaseErrorDialog(QDialog):
         text += f"RMS Error:          {stats['rms']:>12.4f} °\n"
 
         self._stats_text.setText(text)
+
+    def _create_error_chart(self) -> None:
+        """Create a new chart view with the linear phase error plot."""
+        if self._current_data is None:
+            return
+
+        freq = self._current_data['frequency']
+        phase = self._current_data['phase']
+        slope = self._current_data['slope']
+        intercept = self._current_data['intercept']
+
+        # Compute error
+        phase_fit = slope * freq + intercept
+        phase_error = phase - phase_fit
+
+        # Get dataset_id and create proper trace_id
+        dataset_id = self._current_data['dataset_id']
+        i_port = self._current_data['i_port']
+        j_port = self._current_data['j_port']
+        sparam_label = self._current_data['sparam']
+
+        # Create trace_id in standardized format: dataset_id:S{i},{j}_linear_phase_error
+        trace_id = f"{dataset_id}:S{i_port+1},{j_port+1}_linear_phase_error"
+
+        # Prepare chart configuration matching Chart model structure
+        chart_config = {
+            'type': 'linear_phase_error',
+            'title': "Linear Phase Error",
+            'dataset_id': dataset_id,
+            'trace_id': trace_id,
+            'i_port': i_port,
+            'j_port': j_port,
+            'sparam': sparam_label,
+            'frequency': freq,
+            'error': phase_error,
+            'slope': slope,
+            'intercept': intercept,
+            'freq_start': self._current_data['freq_start'],
+            'freq_end': self._current_data['freq_end'],
+            'equation': f"Phase = {slope:.8e} × f + {intercept:.3f}",
+            'dataset_name': self._current_data['dataset_name']
+        }
+
+        # Emit signal to create chart
+        self.create_chart_requested.emit(chart_config)
+
+        # Show confirmation
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self,
+            "Chart Created",
+            "Linear phase error chart has been added to the workspace."
+        )

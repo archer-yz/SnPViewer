@@ -137,6 +137,8 @@ class Chart:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     layout_options: Dict[str, Any] = field(default_factory=dict)
+    phase_unwrap: bool = True  # Whether to unwrap phase for Phase charts
+    linear_phase_error_data: Optional[Dict[str, Any]] = None  # Linear phase error analysis data
 
     def __post_init__(self) -> None:
         """Post-initialization to set default axes if not provided."""
@@ -199,6 +201,12 @@ class Chart:
                 label='Linear Phase (degrees)'
             )
         elif self.chart_type == 'PhaseError':
+            y_axis = AxisConfiguration(
+                unit='°',
+                scale='linear',
+                label='Phase Error (degrees)'
+            )
+        elif self.chart_type == 'LinearPhaseError':
             y_axis = AxisConfiguration(
                 unit='°',
                 scale='linear',
@@ -289,6 +297,8 @@ class Chart:
             return ['linear_phase']
         elif self.chart_type == 'PhaseError':
             return ['phase_error']
+        elif self.chart_type == 'LinearPhaseError':
+            return ['linear_phase_error']
         else:
             return []  # Unknown chart type
 
@@ -340,7 +350,9 @@ class Chart:
             'plot_area_settings': self.plot_area_settings,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat(),
-            'layout_options': self.layout_options
+            'layout_options': self.layout_options,
+            'phase_unwrap': self.phase_unwrap,
+            'linear_phase_error_data': self.linear_phase_error_data
         }
 
     @classmethod
@@ -375,5 +387,7 @@ class Chart:
             plot_area_settings=data.get('plot_area_settings', {}),
             created_at=datetime.fromisoformat(data.get('created_at', datetime.now().isoformat())),
             updated_at=datetime.fromisoformat(data.get('updated_at', datetime.now().isoformat())),
-            layout_options=data.get('layout_options', {})
+            layout_options=data.get('layout_options', {}),
+            phase_unwrap=data.get('phase_unwrap', True),
+            linear_phase_error_data=data.get('linear_phase_error_data')
         )

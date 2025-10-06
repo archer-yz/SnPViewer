@@ -222,6 +222,15 @@ class SnPViewerMainWindow(QMainWindow):
         # Tools Menu
         tools_menu = menubar.addMenu("&Tools")
 
+        # Linear Phase Error Analysis action
+        self._linear_phase_error_action = QAction("&Linear Phase Error Analysis...", self)
+        self._linear_phase_error_action.setShortcut(QKeySequence("Ctrl+L"))
+        self._linear_phase_error_action.setStatusTip("Analyze linear phase errors in S-parameters")
+        self._linear_phase_error_action.triggered.connect(self._show_linear_phase_error_analysis)
+        tools_menu.addAction(self._linear_phase_error_action)
+
+        tools_menu.addSeparator()
+
         # Preferences action
         self._preferences_action = QAction("&Preferences...", self)
         self._preferences_action.setStatusTip("Open preferences dialog")
@@ -644,6 +653,13 @@ class SnPViewerMainWindow(QMainWindow):
                         chart.chart_colors = chart_widget.get_chart_colors()
                     if hasattr(chart_widget, 'get_plot_area_settings'):
                         chart.plot_area_settings = chart_widget.get_plot_area_settings()
+                    # Update phase unwrap setting
+                    if hasattr(chart_widget, 'get_phase_unwrap'):
+                        chart.phase_unwrap = chart_widget.get_phase_unwrap()
+                    # Update linear phase error data
+                    if hasattr(chart_widget, 'get_linear_phase_error_config'):
+                        chart.linear_phase_error_data = chart_widget.get_linear_phase_error_config()
+                        # chart.trace_ids = [chart.linear_phase_error_data.get('trace_id', '')]
 
     def _save_project_to_path(self, file_path: Path) -> bool:
         """Save project to specified path."""
@@ -823,6 +839,9 @@ class SnPViewerMainWindow(QMainWindow):
                 chart_widget.properties_changed.connect(
                     lambda: self._set_modified(True)
                 )
+                chart_widget.create_new_chart_requested.connect(
+                    self._on_create_linear_phase_error_chart
+                )
 
                 # Set a counter-based chart name instead of dataset name
                 chart_widget.set_chart_tab_title(f"Chart{chart_number}")
@@ -901,6 +920,105 @@ class SnPViewerMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Chart Creation Error", f"Failed to create chart: {str(e)}")
 
+    def _on_create_linear_phase_error_chart(self, config: dict) -> None:
+        """
+        Handle request to create a new Linear Phase Error chart.
+
+        Args:
+            config: Chart configuration dictionary containing:
+                - type: 'linear_phase_error'
+                - title: Chart title
+                - dataset_id: Source dataset ID
+                - trace_id: Full trace ID (dataset_id:S11 format)
+                - i_port, j_port: S-parameter indices
+                - sparam: S-parameter label (e.g., 'S11')
+                - frequency, error: Data arrays (converted to lists for JSON)
+                - slope, intercept: Fit parameters
+                - freq_start, freq_end: Frequency range
+                - equation: Fit equation string
+                - dataset_name: Display name
+        """
+        try:
+            # Get the dataset ID from config
+            dataset_id = config.get('dataset_id')
+            if not dataset_id:
+                QMessageBox.warning(self, "Error", "No dataset ID specified for chart")
+                return
+
+            # Find the dataset
+            dataset = self._main_panels.dataset_browser.get_dataset(dataset_id)
+            if not dataset:
+                QMessageBox.warning(self, "Error",
+                                    f"Could not find dataset '{dataset_id}' for linear phase error chart")
+                return
+
+            # Get the next chart number for naming
+            chart_number = self._main_panels.charts_area.get_next_chart_number()
+
+            # Create a new chart widget
+            chart_widget = ChartView()
+
+            # Connect signals
+            chart_widget.add_traces_requested.connect(
+                lambda: self._on_add_traces_requested(chart_widget, 'LinearPhaseError')
+            )
+            chart_widget.properties_changed.connect(
+                lambda: self._set_modified(True)
+            )
+            # chart_widget.create_new_chart_requested.connect(
+            #     self._on_create_linear_phase_error_chart
+            # )
+
+            # Set chart title and tab title
+            chart_widget.set_chart_tab_title(f"Chart{chart_number}")
+            # chart_widget.set_chart_title(config.get('title', 'Linear Phase Error'))
+
+            # Convert numpy arrays to lists if needed (for JSON serialization later)
+            import numpy as np
+            if isinstance(config.get('frequency'), np.ndarray):
+                config['frequency'] = config['frequency'].tolist()
+            if isinstance(config.get('error'), np.ndarray):
+                config['error'] = config['error'].tolist()
+
+            # Create the linear phase error plot
+            chart_widget.create_linear_phase_error_plot(config)
+
+            # Create chart ID and model
+            chart_id = str(uuid.uuid4())[:8]
+
+            x_axis = AxisConfiguration(unit="Hz", label="Frequency", scale="linear")
+            y_axis = AxisConfiguration(unit="°", label="Phase Error")
+            axes = ChartAxes(x=x_axis, y=y_axis)
+
+            chart = Chart(
+                id=chart_id,
+                tab_title=chart_widget._tab_title,
+                title=chart_widget.get_chart_title(),
+                chart_type='LinearPhaseError',
+                trace_ids=[config.get('trace_id', '')],  # Store the trace_id
+                limit_lines={},
+                axes=axes,
+                linear_phase_error_data=config
+            )
+
+            # Add chart to charts area
+            self._main_panels.charts_area.add_chart(chart_id, chart, chart_widget, dataset_id)
+
+            # Apply default styling
+            self._apply_default_chart_styling(chart_widget)
+
+            # Update project if we have one
+            if self._current_project:
+                self._current_project.add_chart(chart)
+                self._set_modified(True)
+
+            msg = f"Created Linear Phase Error chart from {config.get('dataset_name', 'dataset')}"
+            self.statusBar().showMessage(msg)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Chart Creation Error",
+                                 f"Failed to create Linear Phase Error chart: {str(e)}")
+
     def _apply_default_chart_styling(self, chart_widget: ChartView | SmithView) -> None:
         """
         Apply default chart styling from preferences to a newly created chart.
@@ -963,9 +1081,10 @@ class SnPViewerMainWindow(QMainWindow):
                         line_width=2,
                         marker_style='none'
                     )
+                    dataset_id = dataset.id if hasattr(dataset, 'id') else ''
                     trace = Trace(
-                        id=f"S{i+1}{i+1}_smith",
-                        dataset_id=dataset.id if hasattr(dataset, 'id') else '',
+                        id=f"{dataset_id}:S{i+1},{i+1}_smith",
+                        dataset_id=dataset_id,
                         domain="S",
                         metric="reflection",
                         port_path=PortPath(i=i+1, j=i+1),
@@ -985,10 +1104,11 @@ class SnPViewerMainWindow(QMainWindow):
                         line_width=2,
                         marker_style='none'
                     )
-                    trace_id = f"S{i+1}{i+1}_{chart_type}"
+                    dataset_id = dataset.id if hasattr(dataset, 'id') else ''
+                    trace_id = f"{dataset_id}:S{i+1},{i+1}_{chart_type}"
                     trace = Trace(
                         id=trace_id,
-                        dataset_id=dataset.id if hasattr(dataset, 'id') else '',
+                        dataset_id=dataset_id,
                         domain="S",
                         metric="magnitude_dB" if chart_type.lower() == "magnitude" else chart_type.lower(),
                         port_path=PortPath(i=i+1, j=i+1),
@@ -1009,10 +1129,11 @@ class SnPViewerMainWindow(QMainWindow):
                             line_style="dashed" if i != j else "solid",
                             marker_style='none'
                         )
-                        trace_id = f"S{i+1}{j+1}_{chart_type}"
+                        dataset_id = dataset.id if hasattr(dataset, 'id') else ''
+                        trace_id = f"{dataset_id}:S{i+1},{j+1}_{chart_type}"
                         trace = Trace(
                             id=trace_id,
-                            dataset_id=dataset.id if hasattr(dataset, 'id') else '',
+                            dataset_id=dataset_id,
                             domain="S",
                             metric="magnitude_dB" if chart_type.lower() == "magnitude" else chart_type.lower(),
                             port_path=PortPath(i=i+1, j=j+1),
@@ -1168,6 +1289,9 @@ class SnPViewerMainWindow(QMainWindow):
             )
             chart_widget.properties_changed.connect(
                 lambda: self._set_modified(True)
+            )
+            chart_widget.create_new_chart_requested.connect(
+                self._on_create_linear_phase_error_chart
             )
 
             # Set a counter-based chart name
@@ -1490,109 +1614,86 @@ class SnPViewerMainWindow(QMainWindow):
             # Restore charts from project
             for chart in project.charts:
                 try:
-                    # Find the dataset for this chart's traces
-                    chart_dataset = None
-                    chart_dataset_id = None
+                    # NEW APPROACH: Parse dataset_id from each trace_id
+                    # Format: dataset_id:S{i},{j}_{chart_type}
 
-                    # Look through loaded datasets to find one that matches this chart's traces
-                    for dataset_id, dataset_obj in self._main_panels.dataset_browser._datasets.items():
-                        # Try multiple matching strategies:
-                        # 1. New format: trace_id starts with dataset_id (e.g., "dataset_id:S11")
-                        trace_matches_new = [trace_id for trace_id in chart.trace_ids
-                                             if trace_id.startswith(dataset_id)]
+                    # Extract unique dataset IDs from all trace_ids in this chart
+                    chart_dataset_ids = set()
+                    for trace_id in chart.trace_ids:
+                        if trace_id and ':' in trace_id:
+                            dataset_id = trace_id.split(':')[0]
+                            chart_dataset_ids.add(dataset_id)
 
-                        # 2. Check if trace_ids start with the original UUID (for backward compatibility)
-                        original_uuid = None
-                        for _uuid, friendly_name in uuid_to_friendly_name.items():
-                            if friendly_name == dataset_id:
-                                original_uuid = _uuid
-                                break
+                    # Special handling for linear phase error charts - check config for dataset_id
+                    if not chart_dataset_ids:
+                        if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
+                            config_dataset_id = chart.linear_phase_error_data.get('dataset_id')
+                            if config_dataset_id:
+                                chart_dataset_ids.add(config_dataset_id)
 
-                        trace_matches_uuid = []
-                        if original_uuid:
-                            trace_matches_uuid = [trace_id for trace_id in chart.trace_ids
-                                                  if trace_id.startswith(original_uuid)]
+                    if not chart_dataset_ids:
+                        print(f"Warning: Chart {chart.id} has no valid trace_ids with dataset references")
+                        continue
 
-                        # 2. Legacy format: check if dataset has S-parameters that match trace names
-                        trace_matches_legacy = []
-
-                        # Get available S-parameters using get_port_pairs or generate from n_ports
-                        available_s_params = []
-                        if hasattr(dataset_obj, 'get_port_pairs'):
-                            try:
-                                port_pairs = dataset_obj.get_port_pairs()
-                                available_s_params = [f"S{i}{j}" for i, j in port_pairs]
-                            except Exception:
-                                pass
-
-                        # Fallback: generate from n_ports
-                        if not available_s_params and hasattr(dataset_obj, 'n_ports'):
-                            n_ports = dataset_obj.n_ports
-                            for i in range(1, n_ports + 1):
-                                for j in range(1, n_ports + 1):
-                                    available_s_params.append(f"S{i}{j}")
-
-                        # Test each trace ID against available S-parameters
-                        if available_s_params:
-                            for trace_id in chart.trace_ids:
-                                s_param = trace_id.split('_')[0] if '_' in trace_id else trace_id
-                                if s_param in available_s_params:
-                                    # Double-check by trying to get the actual data
-                                    try:
-                                        if hasattr(dataset_obj, 'get_s_parameter'):
-                                            # Parse S-parameter string (e.g., "S11" -> i=1, j=1)
-                                            if len(s_param) >= 3 and s_param.startswith('S'):
-                                                i = int(s_param[1])  # First port number
-                                                j = int(s_param[2])  # Second port number
-                                                param_data = dataset_obj.get_s_parameter(i, j)
-                                                if param_data is not None:
-                                                    trace_matches_legacy.append(trace_id)
-                                    except Exception:
-                                        pass
-
-                        if trace_matches_new or trace_matches_uuid or trace_matches_legacy:
-                            chart_dataset = dataset_obj
-                            chart_dataset_id = dataset_id
-                            break
-
-                    if chart_dataset and chart_dataset_id:
-                        # # Get the next chart number for naming
-                        # chart_number = self._main_panels.charts_area.get_next_chart_number()
-
-                        # Recreate the chart widget with counter-based naming
-                        chart_widget = self._create_chart_widget(
-                            chart.chart_type,
-                            chart_dataset,
-                            chart.tab_title
-                        )
-                        if chart_widget:
-                            chart_widget.set_chart_title(chart.title)
-
-                            # Add chart to charts area
-                            self._main_panels.charts_area.add_chart(chart.id, chart, chart_widget, chart_dataset_id)
-
-                            # Restore the traces that were in this chart
-                            self._restore_chart_traces(chart_widget, chart_dataset, chart.trace_ids, chart.chart_type)
-
-                            # Restore limit lines if they exist
-                            if hasattr(chart, 'limit_lines') and chart.limit_lines:
-                                chart_widget.restore_limit_lines(chart.limit_lines)
-
-                            # Restore font, color, and plot area settings if they exist
-                            try:
-                                if hasattr(chart, 'chart_fonts') and chart.chart_fonts:
-                                    chart_widget.restore_chart_fonts(chart.chart_fonts)
-                                if hasattr(chart, 'chart_colors') and chart.chart_colors:
-                                    chart_widget.restore_chart_colors(chart.chart_colors)
-                                if hasattr(chart, 'plot_area_settings') and chart.plot_area_settings:
-                                    chart_widget.restore_plot_area_settings(chart.plot_area_settings)
-                            except Exception as e:
-                                print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
-                                # Continue without styling restoration
-
-                            charts_restored += 1
+                    # Map dataset IDs to actual dataset objects
+                    chart_datasets = {}
+                    for dataset_id in chart_dataset_ids:
+                        if dataset_id in self._main_panels.dataset_browser._datasets:
+                            chart_datasets[dataset_id] = self._main_panels.dataset_browser._datasets[dataset_id]
                         else:
-                            charts_failed += 1
+                            print(f"Warning: Dataset '{dataset_id}' not found for chart {chart.id}")
+
+                    if not chart_datasets:
+                        print(f"Warning: No datasets found for chart {chart.id}")
+                        continue
+
+                    # Use the first dataset for chart widget creation (needed for initialization)
+                    primary_dataset_id = list(chart_datasets.keys())[0]
+                    primary_dataset = chart_datasets[primary_dataset_id]
+
+                    # Recreate the chart widget with counter-based naming
+                    chart_widget = self._create_chart_widget(
+                        chart.chart_type,
+                        primary_dataset,
+                        chart.tab_title
+                    )
+                    if chart_widget:
+                        chart_widget.set_chart_title(chart.title)
+
+                        # Add chart to charts area (use primary dataset ID for tracking)
+                        self._main_panels.charts_area.add_chart(chart.id, chart, chart_widget, primary_dataset_id)
+
+                        # Restore the traces that were in this chart (NEW: multi-dataset support)
+                        # Skip trace restoration for linear phase error charts (they use custom config)
+                        if chart.chart_type.lower() != 'linearphaseerror':
+                            self._restore_chart_traces_multi_dataset(
+                                chart_widget, chart_datasets, chart.trace_ids, chart.chart_type
+                            )
+
+                        # Restore limit lines if they exist
+                        if hasattr(chart, 'limit_lines') and chart.limit_lines:
+                            chart_widget.restore_limit_lines(chart.limit_lines)
+
+                        # Restore font, color, and plot area settings if they exist
+                        try:
+                            if hasattr(chart, 'chart_fonts') and chart.chart_fonts:
+                                chart_widget.restore_chart_fonts(chart.chart_fonts)
+                            if hasattr(chart, 'chart_colors') and chart.chart_colors:
+                                chart_widget.restore_chart_colors(chart.chart_colors)
+                            if hasattr(chart, 'plot_area_settings') and chart.plot_area_settings:
+                                chart_widget.restore_plot_area_settings(chart.plot_area_settings)
+                            # Restore phase unwrap setting
+                            if hasattr(chart, 'phase_unwrap') and hasattr(chart_widget, 'restore_phase_unwrap'):
+                                chart_widget.restore_phase_unwrap(chart.phase_unwrap)
+                            # Restore linear phase error data
+                            if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
+                                if hasattr(chart_widget, 'restore_linear_phase_error_config'):
+                                    chart_widget.restore_linear_phase_error_config(chart.linear_phase_error_data)
+                        except Exception as e:
+                            print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
+                            # Continue without styling restoration
+
+                        charts_restored += 1
                     else:
                         charts_failed += 1
 
@@ -1845,6 +1946,28 @@ class SnPViewerMainWindow(QMainWindow):
                     "Preferences saved (will apply to new charts)", 3000
                 )
 
+    def _show_linear_phase_error_analysis(self) -> None:
+        """Show the Linear Phase Error Analysis dialog."""
+        # Get all datasets from the dataset browser
+        datasets = self._main_panels.dataset_browser._datasets
+
+        if not datasets:
+            QMessageBox.information(
+                self,
+                "No Datasets",
+                "No datasets are available. Please load data files first."
+            )
+            return
+
+        # Import the dialog
+        from snpviewer.frontend.dialogs.linear_phase_error import \
+            LinearPhaseErrorDialog
+
+        # Create and show the dialog
+        dialog = LinearPhaseErrorDialog(datasets, self)
+        dialog.create_chart_requested.connect(self._on_create_linear_phase_error_chart)
+        dialog.exec()
+
     def _show_about(self) -> None:
         """Show about dialog."""
         QMessageBox.about(
@@ -1954,6 +2077,9 @@ class SnPViewerMainWindow(QMainWindow):
                 chart_widget.properties_changed.connect(
                     lambda: self._set_modified(True)
                 )
+                chart_widget.create_new_chart_requested.connect(
+                    self._on_create_linear_phase_error_chart
+                )
 
                 # Set the dataset name for tab title generation
                 display_name = tab_title if tab_title else dataset.display_name
@@ -1967,12 +2093,89 @@ class SnPViewerMainWindow(QMainWindow):
                     chart_widget.set_plot_type(PlotType.PHASE)
                 elif chart_type.lower() in ["group_delay", "groupdelay"]:
                     chart_widget.set_plot_type(PlotType.GROUP_DELAY)
+                elif chart_type.lower() in ["linearphaseerror", "linear_phase_error"]:
+                    chart_widget.set_plot_type(PlotType.LINEAR_PHASE_ERROR)
 
                 return chart_widget
 
         except Exception as e:
             print(f"Error creating chart widget: {e}")
             return None
+
+    def _restore_chart_traces_multi_dataset(
+        self, chart_widget, datasets: dict, trace_ids: list, chart_type: str
+    ):
+        """
+        Restore traces from multiple datasets to a chart widget.
+        Uses standardized trace_id format: dataset_id:S{i},{j}_{plot_type}
+        """
+        try:
+            traces_to_add = []
+            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
+                      "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
+
+            for idx, trace_id in enumerate(trace_ids):
+                try:
+                    # Parse: dataset_id:S{i},{j}_{plot_type}
+                    if ':' not in trace_id:
+                        continue
+                    dataset_id, rest = trace_id.split(':', 1)
+                    if dataset_id not in datasets:
+                        continue
+                    dataset = datasets[dataset_id]
+
+                    # Parse S-parameter
+                    s_param = rest.split('_')[0] if '_' in rest else rest
+                    if not s_param.startswith('S'):
+                        continue
+                    param_part = s_param[1:]
+                    if ',' not in param_part:
+                        continue
+                    parts = param_part.split(',')
+                    i, j = int(parts[0]), int(parts[1])
+
+                    # Get data
+                    if dataset.get_s_parameter(i, j) is None:
+                        continue
+
+                    # Determine metric
+                    if chart_type.lower() == "magnitude":
+                        metric = "magnitude_dB"
+                    elif chart_type.lower() == "phase":
+                        metric = "phase_deg"
+                    elif chart_type.lower() in ['smith', 'smith_chart']:
+                        metric = "reflection" if i == j else "transmission"
+                    else:
+                        metric = chart_type.lower()
+
+                    # Create trace
+                    style = TraceStyle(
+                        color=colors[idx % len(colors)],
+                        line_width=2,
+                        line_style="solid" if i == j else "dashed"
+                    )
+                    trace = Trace(
+                        id=trace_id,
+                        dataset_id=dataset_id,
+                        domain="S",
+                        metric=metric,
+                        port_path=PortPath(i=i, j=j),
+                        style=style
+                    )
+                    traces_to_add.append((trace_id, trace, dataset))
+                except Exception:
+                    continue
+
+            # Add traces to chart
+            if traces_to_add:
+                for trace_id, trace, dataset in traces_to_add:
+                    if hasattr(chart_widget, 'add_trace'):
+                        if chart_type.lower() in ['smith', 'smith_chart']:
+                            chart_widget.add_trace(trace, trace.style)
+                        else:
+                            chart_widget.add_trace(trace_id, trace, dataset)
+        except Exception as e:
+            print(f"Error restoring traces: {e}")
 
     def _restore_chart_traces(self, chart_widget, dataset: Dataset, trace_ids: list, chart_type: str):
         """
@@ -2003,7 +2206,7 @@ class SnPViewerMainWindow(QMainWindow):
                     _, s_param = trace_id.split(':', 1)
 
                 elif '_' in trace_id:
-                    # Legacy format: "S11_magnitude", "S21_phase", etc.
+                    # Current format: "S1,2_magnitude_dataset" or legacy "S11_magnitude"
                     s_param = trace_id.split('_')[0]
 
                 else:
@@ -2025,52 +2228,77 @@ class SnPViewerMainWindow(QMainWindow):
                         # Try different ways to get S-parameter data
                         if hasattr(dataset, 'get_s_parameter'):
                             try:
-                                # Parse S-parameter string (e.g., "S11" -> i=1, j=1)
-                                if len(s_param) >= 3 and s_param.startswith('S'):
-                                    i = int(s_param[1])  # First port number
-                                    j = int(s_param[2])  # Second port number
+                                # Parse S-parameter string
+                                # Handle formats: "S1,2" (new) or "S12" (old)
+                                if s_param.startswith('S'):
+                                    param_part = s_param[1:]  # Remove 'S'
+                                    if ',' in param_part:
+                                        # New format: "S1,2"
+                                        parts = param_part.split(',')
+                                        i = int(parts[0])
+                                        j = int(parts[1])
+                                    else:
+                                        # Old format: "S12" or "S11"
+                                        if len(param_part) >= 2:
+                                            i = int(param_part[0])
+                                            j = int(param_part[1])
+                                        else:
+                                            continue
                                     s_param_data = dataset.get_s_parameter(i, j)
-                            except Exception:
+                            except Exception as e:
+                                print(f"Warning: Failed to parse S-parameter '{s_param}': {e}")
                                 pass
 
                         if s_param_data is not None:
-                            # Parse S-parameter to get port indices (e.g., "S21" -> i=2, j=1)
-                            if len(s_param) >= 3 and s_param.startswith('S'):
-                                i = int(s_param[1])  # First port number
-                                j = int(s_param[2])  # Second port number
+                            # Parse S-parameter to get port indices
+                            try:
+                                if s_param.startswith('S'):
+                                    param_part = s_param[1:]  # Remove 'S'
+                                    if ',' in param_part:
+                                        # New format: "S1,2"
+                                        parts = param_part.split(',')
+                                        i = int(parts[0])
+                                        j = int(parts[1])
+                                    else:
+                                        # Old format: "S12" or "S11"
+                                        if len(param_part) >= 2:
+                                            i = int(param_part[0])
+                                            j = int(param_part[1])
+                                        else:
+                                            continue
 
-                                # Determine metric based on chart type
-                                if chart_type.lower() == "magnitude":
-                                    metric = "magnitude_dB"
-                                elif chart_type.lower() == "phase":
-                                    metric = "phase_deg"
-                                elif chart_type.lower() in ['smith', 'smith_chart']:
-                                    metric = "reflection" if i == j else "transmission"
-                                else:
-                                    metric = chart_type.lower()
+                                    # Determine metric based on chart type
+                                    if chart_type.lower() == "magnitude":
+                                        metric = "magnitude_dB"
+                                    elif chart_type.lower() == "phase":
+                                        metric = "phase_deg"
+                                    elif chart_type.lower() in ['smith', 'smith_chart']:
+                                        metric = "reflection" if i == j else "transmission"
+                                    else:
+                                        metric = chart_type.lower()
 
-                                # Create trace with correct parameters
-                                # Use different colors and styles for different traces
-                                color = colors[idx % len(colors)]
-                                line_style = "solid" if i == j else "dashed"  # Reflection vs transmission
+                                    # Create trace with correct parameters
+                                    # Use different colors and styles for different traces
+                                    color = colors[idx % len(colors)]
+                                    line_style = "solid" if i == j else "dashed"  # Reflection vs transmission
 
-                                style = TraceStyle(
-                                    color=color,
-                                    line_width=2,
-                                    line_style=line_style
-                                )
+                                    style = TraceStyle(
+                                        color=color,
+                                        line_width=2,
+                                        line_style=line_style
+                                    )
 
-                                trace = Trace(
-                                    id=trace_id,
-                                    dataset_id=dataset.id,
-                                    domain="S",
-                                    metric=metric,
-                                    port_path=PortPath(i=i, j=j),
-                                    style=style
-                                )
-                                traces_to_add.append(trace)
-
-                            else:
+                                    trace = Trace(
+                                        id=trace_id,
+                                        dataset_id=dataset.id,
+                                        domain="S",
+                                        metric=metric,
+                                        port_path=PortPath(i=i, j=j),
+                                        style=style
+                                    )
+                                    traces_to_add.append(trace)
+                            except Exception as e:
+                                print(f"Warning: Failed to create trace for '{s_param}': {e}")
                                 pass
 
             # Add traces to the chart widget

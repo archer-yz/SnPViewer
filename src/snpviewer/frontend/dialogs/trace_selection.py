@@ -190,11 +190,12 @@ class TraceSelectionDialog(QDialog):
                 marker_style='none'
             )
 
-            # Create trace
-            trace_id = f"S{i}{j}_{self._chart_type}"
+            # Create trace with standardized format: dataset_id:S{i},{j}_{chart_type}
+            dataset_id = getattr(self._dataset, 'id', '')
+            trace_id = f"{dataset_id}:S{i},{j}_{self._chart_type}"
             trace = Trace(
                 id=trace_id,
-                dataset_id=getattr(self._dataset, 'id', ''),
+                dataset_id=dataset_id,
                 domain="S",
                 metric=metric,
                 port_path=PortPath(i=i, j=j),

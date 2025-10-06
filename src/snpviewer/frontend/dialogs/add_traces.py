@@ -1,9 +1,7 @@
 """
 Advanced trace management dialog for adding traces to existing charts.
 
-Provides functionality to add traces from any load        }
-
-        # Reflection parametersataset to the current chart,
+Provides functionality to add traces from any loaded dataset to the current chart,
 with parameter selection and style customization options.
 """
 from __future__ import annotations
@@ -204,25 +202,17 @@ class AddTracesDialog(QDialog):
         row = 1
         col = 0
         for i in range(dataset.n_ports):
-            trace_id = f"S{i+1}{i+1}_{self._chart_type}_{dataset_id}"
-            # Also check for old format trace ID (backward compatibility)
-            old_trace_id = f"S{i+1}{i+1}_{self._chart_type}"
+            # Standardized format: dataset_id:S{i},{j}_{chart_type}
+            trace_id = f"{dataset_id}:S{i+1},{i+1}_{self._chart_type}"
 
-            checkbox = QCheckBox(f"S{i+1}{i+1}")
+            checkbox = QCheckBox(f"S{i+1},{i+1}")
 
-            # Check if this trace already exists in the chart (check both new and old formats)
-            existing_trace_id = None
+            # Check if this trace already exists in the chart
             if trace_id in existing_traces_for_dataset:
-                existing_trace_id = trace_id
-            elif old_trace_id in existing_traces_for_dataset:
-                existing_trace_id = old_trace_id
-
-            if existing_trace_id:
                 checkbox.setChecked(True)
                 checkbox.setToolTip(f"Existing reflection parameter for port {i+1} (uncheck to remove)")
                 checkbox.setStyleSheet("font-weight: bold; color: #2E7D32;")  # Green for existing
-                # Map only the existing trace ID to avoid confusion
-                self._checkboxes[existing_trace_id] = checkbox
+                self._checkboxes[trace_id] = checkbox
             else:
                 checkbox.setChecked(False)
                 checkbox.setToolTip(f"Add reflection parameter for port {i+1}")
@@ -250,26 +240,18 @@ class AddTracesDialog(QDialog):
             for i in range(dataset.n_ports):
                 for j in range(dataset.n_ports):
                     if i != j:
-                        trace_id = f"S{i+1}{j+1}_{self._chart_type}_{dataset_id}"
-                        # Also check for old format trace ID (backward compatibility)
-                        old_trace_id = f"S{i+1}{j+1}_{self._chart_type}"
+                        # Standardized format: dataset_id:S{i},{j}_{chart_type}
+                        trace_id = f"{dataset_id}:S{i+1},{j+1}_{self._chart_type}"
 
-                        checkbox = QCheckBox(f"S{i+1}{j+1}")
+                        checkbox = QCheckBox(f"S{i+1},{j+1}")
 
-                        # Check if this trace already exists in the chart (check both new and old formats)
-                        existing_trace_id = None
+                        # Check if this trace already exists in the chart
                         if trace_id in existing_traces_for_dataset:
-                            existing_trace_id = trace_id
-                        elif old_trace_id in existing_traces_for_dataset:
-                            existing_trace_id = old_trace_id
-
-                        if existing_trace_id:
                             checkbox.setChecked(True)
                             tooltip = f"Existing transmission from port {j+1} to port {i+1} (uncheck to remove)"
                             checkbox.setToolTip(tooltip)
                             checkbox.setStyleSheet("font-weight: bold; color: #2E7D32;")  # Green for existing
-                            # Map only the existing trace ID to avoid confusion
-                            self._checkboxes[existing_trace_id] = checkbox
+                            self._checkboxes[trace_id] = checkbox
                         else:
                             checkbox.setChecked(False)
                             checkbox.setToolTip(f"Add transmission from port {j+1} to port {i+1}")
@@ -378,12 +360,32 @@ class AddTracesDialog(QDialog):
             # Only add traces that are checked AND not already existing
             if is_checked and trace_id not in existing_traces_for_dataset:
                 # Parse trace_id to get parameters
-                # Format: S{i}{j}_{chart_type}
-                parts = trace_id.split('_')
-                param = parts[0]  # e.g., "S21"
+                # Format: dataset_id:S{i},{j}_{chart_type}
+                if ':' not in trace_id:
+                    continue  # Invalid format
 
-                i = int(param[1])  # First port number
-                j = int(param[2])  # Second port number
+                # Split dataset_id from rest
+                _, rest = trace_id.split(':', 1)
+
+                # Split S-parameter from chart type
+                parts = rest.split('_')
+                if not parts:
+                    continue
+
+                param = parts[0]  # e.g., "S1,2"
+
+                # Parse port numbers - handle comma-separated format
+                if param.startswith('S'):
+                    param_part = param[1:]  # Remove 'S'
+                    if ',' in param_part:
+                        # Format: "S1,2"
+                        port_parts = param_part.split(',')
+                        i = int(port_parts[0])
+                        j = int(port_parts[1])
+                    else:
+                        continue  # Invalid format, we only support comma-separated now
+                else:
+                    continue  # Invalid format
 
                 # Determine metric based on chart type
                 if self._chart_type.lower() == "magnitude":

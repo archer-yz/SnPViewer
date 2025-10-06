@@ -667,14 +667,14 @@ class ChartsAreaPanel(QWidget):
             tab_title = chart.title
 
         # Ensure the tab title is unique
-        unique_tab_title = self._ensure_unique_chart_tab_title(tab_title, chart_id)
+        unique_tab_title, unique_tab_title_no_type = self._ensure_unique_chart_tab_title(tab_title, chart_id)
 
         # Update the chart's tab_title to the unique version
-        chart.tab_title = unique_tab_title
+        chart.tab_title = unique_tab_title_no_type
 
         # Update the widget's tab title if it was changed
         if unique_tab_title != tab_title and hasattr(widget, 'set_chart_tab_title'):
-            widget.set_chart_tab_title(unique_tab_title)
+            widget.set_chart_tab_title(unique_tab_title_no_type)
 
         tab_index = self._chart_tabs.addTab(widget, unique_tab_title)
         self._chart_tabs.setCurrentIndex(tab_index)
@@ -697,7 +697,7 @@ class ChartsAreaPanel(QWidget):
                 lambda new_title, cid=chart_id: self._update_chart_title(cid, new_title)
             )
 
-    def _ensure_unique_chart_tab_title(self, desired_title: str, current_chart_id: str) -> str:
+    def _ensure_unique_chart_tab_title(self, desired_title: str, current_chart_id: str) -> tuple[str, str]:
         """
         Ensure the chart tab title is unique among all charts.
 
@@ -706,7 +706,8 @@ class ChartsAreaPanel(QWidget):
             current_chart_id: The ID of the chart being renamed
 
         Returns:
-            A unique tab title, potentially with a suffix like (1), (2), etc.
+            str: A unique tab title with plot type, potentially with a suffix like (1), (2), etc.
+            str: The tab title without the plot type suffix
         """
         existing_titles = set()
         for i in range(self._chart_tabs.count()):
@@ -715,7 +716,7 @@ class ChartsAreaPanel(QWidget):
                 existing_titles.add(self._chart_tabs.tabText(i))
 
         if desired_title not in existing_titles:
-            return desired_title
+            return desired_title, re.sub(r'\s*\([^()]*\)\s*$', '', desired_title)
 
         # Find a unique suffix
         counter = 1
@@ -724,7 +725,7 @@ class ChartsAreaPanel(QWidget):
             counter += 1
             new_title = re.sub(r'(\s*)(\([^)]*\))$', rf' ({counter})\1\2', desired_title)
 
-        return new_title
+        return new_title, re.sub(r'\s*\([^()]*\)\s*$', '', new_title)
 
     def _update_chart_title(self, chart_id: str, new_title: str) -> None:
         """Update the chart model's title when the chart title changes."""
@@ -752,28 +753,18 @@ class ChartsAreaPanel(QWidget):
         if not self._charts:
             self._add_placeholder_tab()
 
-    def _update_tab_title(self, chart_id: str, new_title: str, new_title_no_type: str) -> None:
+    def _update_tab_title(self, chart_id: str, new_title: str) -> None:
         """Update the tab title for a specific chart."""
         # Ensure the new title is unique
-        unique_title = self._ensure_unique_chart_tab_title(new_title, chart_id)
+        unique_title, unique_title_no_type = self._ensure_unique_chart_tab_title(new_title, chart_id)
 
         # Find tab index for this chart and update
         for i in range(self._chart_tabs.count()):
             if self._chart_tabs.tabBar().tabData(i) == chart_id:
                 self._chart_tabs.setTabText(i, unique_title)
 
-                # # If the title was modified for uniqueness, update the chart widget
-                # if unique_title != new_title and chart_id in self._charts:
-                #     # Get the widget to update its internal title
-                #     widget = self._chart_tabs.widget(i)
-                #     if widget and hasattr(widget, 'set_chart_tab_title'):
-                #         # Temporarily disconnect to avoid recursive signals
-                #         widget.blockSignals(True)
-                #         widget.set_chart_tab_title(unique_title)
-                #         widget.blockSignals(False)
-
                 # Update the chart model
-                self._charts[chart_id].tab_title = new_title_no_type
+                self._charts[chart_id].tab_title = unique_title_no_type
                 break
 
     def get_current_chart_id(self) -> Optional[str]:

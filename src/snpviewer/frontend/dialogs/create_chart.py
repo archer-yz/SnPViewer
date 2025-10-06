@@ -287,8 +287,8 @@ class CreateChartDialog(QDialog):
                     marker_style='none'
                 )
 
-                # Create trace
-                trace_id = f"{dataset_id}_S{i}{j}_{chart_type}"
+                # Create trace with standardized format: dataset_id:S{i},{j}_{chart_type}
+                trace_id = f"{dataset.id}:S{i},{j}_{chart_type}"
                 trace = Trace(
                     id=trace_id,
                     dataset_id=dataset.id,

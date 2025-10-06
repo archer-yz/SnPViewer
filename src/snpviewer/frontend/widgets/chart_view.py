@@ -38,9 +38,10 @@ class ChartView(QWidget):
     marker_added = Signal(float, float, str)  # x, y, trace_id
     view_changed = Signal()
     add_traces_requested = Signal()  # Request to add traces from main window
-    tab_title_changed = Signal(str, str)  # New tab title with type, new tab title without type
+    tab_title_changed = Signal(str)  # New tab title with type
     chart_title_changed = Signal(str)  # New chart title
     properties_changed = Signal()  # Emitted when any chart properties are modified
+    create_new_chart_requested = Signal(dict)  # Request to create a new chart (e.g., linear phase error)
 
     def __init__(self, parent: Optional[QWidget] = None):
         """Initialize the chart view."""
@@ -174,12 +175,6 @@ class ChartView(QWidget):
         self._phase_unwrap_action.setChecked(True)
         self._phase_unwrap_action.triggered.connect(self._toggle_phase_unwrap)
         phase_options_menu.addAction(self._phase_unwrap_action)
-
-        phase_options_menu.addSeparator()
-
-        self._linear_phase_error_action = QAction("Linear Phase Error Analysis...", self)
-        self._linear_phase_error_action.triggered.connect(self._show_linear_phase_error_dialog)
-        phase_options_menu.addAction(self._linear_phase_error_action)
 
         self._group_delay_action = QAction("Group Delay", self)
         self._group_delay_action.setCheckable(True)
@@ -702,7 +697,7 @@ class ChartView(QWidget):
         # Update axis labels
         if plot_type == PlotType.MAGNITUDE:
             self._y_axis_label = 'Magnitude (dB)'
-        elif plot_type == PlotType.PHASE:
+        elif plot_type == PlotType.PHASE or plot_type == PlotType.LINEAR_PHASE_ERROR:
             self._y_axis_label = 'Phase (°)'
         elif plot_type == PlotType.GROUP_DELAY:
             self._y_axis_label = 'Group Delay (ns)'
@@ -1068,7 +1063,8 @@ class ChartView(QWidget):
         return {
             PlotType.MAGNITUDE: "Magnitude",
             PlotType.PHASE: "Phase",
-            PlotType.GROUP_DELAY: "Group Delay"
+            PlotType.GROUP_DELAY: "Group Delay",
+            PlotType.LINEAR_PHASE_ERROR: "Linear Phase Error"
         }.get(self._plot_type, "Unknown")
 
     def _get_current_tab_title(self) -> str:
@@ -1084,7 +1080,7 @@ class ChartView(QWidget):
     def _update_tab_title(self) -> None:
         """Update the tab title and emit signal for tab to be updated."""
         new_tab_title = self._get_current_tab_title()
-        self.tab_title_changed.emit(new_tab_title, self._tab_title)
+        self.tab_title_changed.emit(new_tab_title)
 
     def _change_chart_title(self) -> None:
         """Show dialog to change the chart title (plot widget title)."""
@@ -1141,7 +1137,62 @@ class ChartView(QWidget):
 
         # Create and show the dialog
         dialog = LinearPhaseErrorDialog(self._datasets, parent=self)
+        # Connect signal to handle chart creation
+        dialog.create_chart_requested.connect(self._handle_linear_phase_error_chart_request)
         dialog.exec()
+
+    def _handle_linear_phase_error_chart_request(self, config: dict) -> None:
+        """Handle request to create a linear phase error chart."""
+        # Emit signal to request the main app to create a new chart
+        self.create_new_chart_requested.emit(config)
+
+    def create_linear_phase_error_plot(self, config: Dict[str, Any]) -> None:
+        """
+        Create a linear phase error plot from configuration.
+
+        Args:
+            config: Configuration dictionary containing:
+                - frequency: Frequency array
+                - error: Phase error array
+                - slope: Fit slope
+                - intercept: Fit intercept
+                - equation: Fit equation string
+                - freq_start, freq_end: Frequency range limits
+        """
+        freq = config['frequency']
+        error = config['error']
+        equation = config['equation']
+
+        # Store the configuration
+        self._linear_phase_error_config = config
+        self._plot_type = PlotType.LINEAR_PHASE_ERROR
+
+        # Clear existing items
+        self._plot_item.clear()
+        self._legend.clear()
+
+        # Plot error
+        pen_error = pg.mkPen(color='g', width=2)
+        self._plot_item.plot(freq, error, pen=pen_error, name=f"{config['dataset_name']}: {config['sparam']}")
+
+        # # Add zero reference line
+        # pen_zero = pg.mkPen(color='k', width=1, style=Qt.PenStyle.DashLine)
+        # self._plot_item.plot([freq[0], freq[-1]], [0, 0], pen=pen_zero, name='Zero Reference')
+
+        # Set axis labels
+        self._y_axis_label = 'Phase Error (°)'
+        self._set_axis_label_with_styling('left', self._y_axis_label)
+        self._set_axis_label_with_styling('bottom', 'Frequency', self._x_axis_unit)
+
+        # Set title with equation
+        title = f"{config.get('title', 'Linear Phase Error')}"
+        self.set_chart_title(title)
+
+        # Fix view range to specified frequency range
+        freq_start = config.get('freq_start', freq[0])
+        freq_end = config.get('freq_end', freq[-1])
+        self._plot_item.setXRange(freq_start, freq_end, padding=0.02)
+        self._plot_item.enableAutoRange(axis='y')
 
     def get_existing_trace_ids(self) -> List[str]:
         """Get list of existing trace IDs in this chart."""
@@ -1539,6 +1590,35 @@ class ChartView(QWidget):
             self._apply_plot_area_settings(self._plot_area_settings)
         except Exception as e:
             print(f"Warning: Could not apply restored plot area settings: {e}")
+
+    def get_phase_unwrap(self) -> bool:
+        """Get phase unwrap setting for serialization."""
+        return self._phase_unwrap
+
+    def restore_phase_unwrap(self, unwrap: bool) -> None:
+        """Restore phase unwrap setting from saved data."""
+        self._phase_unwrap = unwrap
+        self._phase_unwrap_action.setChecked(unwrap)
+
+        # If currently in phase mode, refresh
+        if self._plot_type == PlotType.PHASE:
+            self._refresh_all_traces()
+
+    def get_linear_phase_error_config(self) -> Optional[Dict[str, Any]]:
+        """Get linear phase error configuration for serialization."""
+        if not hasattr(self, '_linear_phase_error_config'):
+            return None
+        return self._linear_phase_error_config
+
+    def restore_linear_phase_error_config(self, config: Dict[str, Any]) -> None:
+        """Restore linear phase error configuration from saved data."""
+        if not config:
+            return
+        self._linear_phase_error_config = config
+
+        # If this is a linear phase error chart, recreate the plot
+        if config.get('type') == 'linear_phase_error':
+            self.create_linear_phase_error_plot(config)
 
     def _apply_all_styling(self) -> None:
         """Apply all stored font and color styling to chart elements."""
@@ -2817,6 +2897,7 @@ class ChartView(QWidget):
                         # If direct font setting fails, at least we have size and color from setTitle
                         print(f"Warning: Could not apply full title font styling: {e}")
                 return
+            self._plot_item.setTitle(title)
 
         # Fallback to basic title
         self._plot_item.setTitle(title)
