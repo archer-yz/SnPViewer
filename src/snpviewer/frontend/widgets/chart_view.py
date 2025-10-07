@@ -1150,28 +1150,54 @@ class ChartView(QWidget):
         # Emit signal to request the main app to create a new chart
         self.create_new_chart_requested.emit(config)
 
-    def create_linear_phase_error_plot(self, config: Dict[str, Any]) -> None:
+    def create_linear_phase_error_plot(self, config: Dict[str, Any], dataset: Optional[Dataset] = None) -> None:
         """
         Create a linear phase error plot from configuration.
 
         Args:
             config: Configuration dictionary containing:
-                - frequency: Frequency array
-                - error: Phase error array
                 - slope: Fit slope
                 - intercept: Fit intercept
-                - equation: Fit equation string
                 - freq_start, freq_end: Frequency range limits
-                - trace_id: Trace identifier
                 - dataset_id: Dataset identifier
                 - i_port, j_port: Port indices
+                - Optional: frequency, error (will be recalculated if missing)
+            dataset: Optional dataset to use for recalculation
         """
         from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
 
-        freq = config['frequency']
-        error = config['error']
-        trace_id = config.get('trace_id', '')
         dataset_id = config.get('dataset_id', '')
+        i_port = config.get('i_port', 0)
+        j_port = config.get('j_port', 0)
+
+        # Get frequency and error arrays
+        # If they're in the config (newly created chart), use them
+        # If they're missing (loaded from file), recalculate them
+        if 'frequency' in config and 'error' in config:
+            freq = config['frequency']
+            error = config['error']
+        else:
+            # Need to recalculate from the dataset
+            # Use provided dataset, or find it in self._datasets
+            if dataset is None:
+                # Find the dataset in self._datasets by matching dataset_id
+                for trace_id, ds in self._datasets.items():
+                    if hasattr(ds, 'id') and ds.id == dataset_id:
+                        dataset = ds
+                        break
+
+            if dataset is None:
+                print(f"Warning: Cannot recalculate linear phase error - dataset {dataset_id} not found")
+                return
+
+            # Recalculate frequency and error from parameters
+            freq, error = self._recalculate_linear_phase_error(config, dataset)
+
+            # Store recalculated arrays in config for later use
+            config['frequency'] = freq
+            config['error'] = error
+
+        trace_id = config.get('trace_id', '')
         i_port = config.get('i_port', 0)
         j_port = config.get('j_port', 0)
 
@@ -1699,21 +1725,68 @@ class ChartView(QWidget):
         if self._plot_type == PlotType.PHASE:
             self._refresh_all_traces()
 
+    def _recalculate_linear_phase_error(self, config: Dict[str, Any], dataset: Dataset) -> Tuple[Any, Any]:
+        """
+        Recalculate frequency and error arrays from saved parameters and dataset.
+
+        Args:
+            config: Configuration containing slope, intercept, freq_start, freq_end, i_port, j_port
+            dataset: Dataset containing the S-parameter data
+
+        Returns:
+            Tuple of (frequency_array, error_array)
+        """
+        from snpviewer.frontend.plotting.plot_pipelines import (
+            convert_s_to_phase, get_frequency_array, unwrap_phase)
+
+        # Extract parameters
+        slope = config['slope']
+        intercept = config['intercept']
+        freq_start = config['freq_start']
+        freq_end = config['freq_end']
+        i_port = config['i_port']
+        j_port = config['j_port']
+
+        # Get frequency array
+        freq = get_frequency_array(dataset, unit='Hz')
+
+        # Get S-parameter
+        s_param = dataset.s_params[:, i_port, j_port]
+
+        # Apply frequency range filter
+        mask = (freq >= freq_start) & (freq <= freq_end)
+        freq_filtered = freq[mask]
+        s_param_filtered = s_param[mask]
+
+        # Compute unwrapped phase in degrees
+        phase = convert_s_to_phase(s_param_filtered, degrees=True)
+        phase = unwrap_phase(phase)
+
+        # Compute linear fit line
+        phase_fit = slope * freq_filtered + intercept
+
+        # Compute error
+        error = phase - phase_fit
+
+        return freq_filtered, error
+
     def get_linear_phase_error_config(self) -> Optional[Dict[str, Any]]:
-        """Get linear phase error configuration for serialization."""
+        """
+        Get linear phase error configuration for serialization.
+
+        Only saves the mathematical parameters (slope, intercept, frequency range, ports)
+        and NOT the frequency/error arrays, which will be recalculated on load.
+        """
         if not hasattr(self, '_linear_phase_error_config'):
             return None
-
-        import numpy as np
 
         # Make a copy of the config
         config = self._linear_phase_error_config.copy()
 
-        # Convert numpy arrays to lists for JSON serialization
-        if isinstance(config.get('frequency'), np.ndarray):
-            config['frequency'] = config['frequency'].tolist()
-        if isinstance(config.get('error'), np.ndarray):
-            config['error'] = config['error'].tolist()
+        # Remove frequency and error arrays - these will be recalculated on load
+        config.pop('frequency', None)
+        config.pop('error', None)
+        config.pop('phase', None)  # Also remove intermediate phase data if present
 
         # Update with current trace style if trace exists
         trace_id = config.get('trace_id', '')
@@ -1724,15 +1797,21 @@ class ChartView(QWidget):
 
         return config
 
-    def restore_linear_phase_error_config(self, config: Dict[str, Any]) -> None:
-        """Restore linear phase error configuration from saved data."""
+    def restore_linear_phase_error_config(self, config: Dict[str, Any], dataset: Optional[Dataset] = None) -> None:
+        """
+        Restore linear phase error configuration from saved data.
+
+        Args:
+            config: Configuration dictionary with parameters
+            dataset: Optional dataset to use for recalculation (if not provided, will search in _datasets)
+        """
         if not config:
             return
         self._linear_phase_error_config = config
 
         # If this is a linear phase error chart, recreate the plot
         if config.get('type') == 'linear_phase_error':
-            self.create_linear_phase_error_plot(config)
+            self.create_linear_phase_error_plot(config, dataset)
 
     def _apply_all_styling(self) -> None:
         """Apply all stored font and color styling to chart elements."""

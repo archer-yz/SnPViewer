@@ -1693,7 +1693,12 @@ class SnPViewerMainWindow(QMainWindow):
                             # Restore linear phase error data
                             if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
                                 if hasattr(chart_widget, 'restore_linear_phase_error_config'):
-                                    chart_widget.restore_linear_phase_error_config(chart.linear_phase_error_data)
+                                    # Get the dataset for linear phase error recalculation
+                                    lpe_dataset_id = chart.linear_phase_error_data.get('dataset_id')
+                                    lpe_dataset = chart_datasets.get(lpe_dataset_id) if lpe_dataset_id else None
+                                    chart_widget.restore_linear_phase_error_config(
+                                        chart.linear_phase_error_data, lpe_dataset
+                                    )
                         except Exception as e:
                             print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
                             # Continue without styling restoration
