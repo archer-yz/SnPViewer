@@ -642,8 +642,18 @@ class SnPViewerMainWindow(QMainWindow):
                 # Update chart model with current widget state
                 chart = self._current_project.get_chart(chart_id)
                 if chart:
+                    # Get existing traces with their Trace objects
+                    existing_traces = chart_widget.get_existing_traces()
+
                     # Update trace IDs
-                    chart.trace_ids = list(chart_widget.get_existing_traces().keys())
+                    chart.trace_ids = list(existing_traces.keys())
+
+                    # Update traces with serialized Trace data
+                    chart.traces = {}
+                    for trace_id, (dataset_id, trace, dataset) in existing_traces.items():
+                        # Serialize the Trace object to dict
+                        chart.traces[trace_id] = trace.to_dict()
+
                     # Update limit lines
                     chart.limit_lines = chart_widget.get_limit_lines()
                     # Update font, color, and plot area settings
@@ -1671,8 +1681,10 @@ class SnPViewerMainWindow(QMainWindow):
                         # Restore the traces that were in this chart (NEW: multi-dataset support)
                         # Skip trace restoration for linear phase error charts (they use custom config)
                         if chart.chart_type.lower() != 'linearphaseerror':
+                            # Pass saved trace data if available for style preservation
+                            saved_traces = getattr(chart, 'traces', {})
                             self._restore_chart_traces_multi_dataset(
-                                chart_widget, chart_datasets, chart.trace_ids, chart.chart_type
+                                chart_widget, chart_datasets, chart.trace_ids, chart.chart_type, saved_traces
                             )
 
                         # Restore limit lines if they exist
@@ -2113,13 +2125,23 @@ class SnPViewerMainWindow(QMainWindow):
             return None
 
     def _restore_chart_traces_multi_dataset(
-        self, chart_widget, datasets: dict, trace_ids: list, chart_type: str
+        self, chart_widget, datasets: dict, trace_ids: list, chart_type: str, saved_traces: dict = None
     ):
         """
         Restore traces from multiple datasets to a chart widget.
         Uses standardized trace_id format: dataset_id:S{i},{j}_{plot_type}
+
+        Args:
+            chart_widget: The chart widget to restore traces to
+            datasets: Dictionary of available datasets {dataset_id: Dataset}
+            trace_ids: List of trace IDs to restore
+            chart_type: Type of chart being restored
+            saved_traces: Optional dict of saved trace data {trace_id: trace_dict} for style preservation
         """
         try:
+            from snpviewer.backend.models.trace import (PortPath, Trace,
+                                                        TraceStyle)
+
             traces_to_add = []
             colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
                       "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
@@ -2158,20 +2180,25 @@ class SnPViewerMainWindow(QMainWindow):
                     else:
                         metric = chart_type.lower()
 
-                    # Create trace
-                    style = TraceStyle(
-                        color=colors[idx % len(colors)],
-                        line_width=2,
-                        line_style="solid" if i == j else "dashed"
-                    )
-                    trace = Trace(
-                        id=trace_id,
-                        dataset_id=dataset_id,
-                        domain="S",
-                        metric=metric,
-                        port_path=PortPath(i=i, j=j),
-                        style=style
-                    )
+                    # Check if we have saved trace data for this trace_id
+                    if saved_traces and trace_id in saved_traces:
+                        # Restore trace from saved data (includes style)
+                        trace = Trace.from_dict(saved_traces[trace_id])
+                    else:
+                        # Create trace with default style
+                        style = TraceStyle(
+                            color=colors[idx % len(colors)],
+                            line_width=2,
+                            line_style="solid" if i == j else "dashed"
+                        )
+                        trace = Trace(
+                            id=trace_id,
+                            dataset_id=dataset_id,
+                            domain="S",
+                            metric=metric,
+                            port_path=PortPath(i=i, j=j),
+                            style=style
+                        )
                     traces_to_add.append((trace_id, trace, dataset))
                 except Exception:
                     continue

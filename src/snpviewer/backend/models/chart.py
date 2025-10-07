@@ -125,6 +125,7 @@ class Chart:
     title: str
     chart_type: str
     trace_ids: List[str] = field(default_factory=list)
+    traces: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Serialized trace data {trace_id: trace_dict}
     limit_lines: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     axes: Optional[ChartAxes] = None
     linked_x_axis: bool = False
@@ -339,6 +340,7 @@ class Chart:
             'title': self.title,
             'chart_type': self.chart_type,
             'trace_ids': self.trace_ids,
+            'traces': self.traces,
             'limit_lines': self.limit_lines,
             'axes': self.axes.to_dict() if self.axes else None,
             'linked_x_axis': self.linked_x_axis,
@@ -376,6 +378,7 @@ class Chart:
             title=data['title'],
             chart_type=data['chart_type'],
             trace_ids=data.get('trace_ids', []),
+            traces=data.get('traces', {}),
             limit_lines=data.get('limit_lines', {}),
             axes=axes,
             linked_x_axis=data.get('linked_x_axis', False),
