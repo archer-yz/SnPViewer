@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QDialog, QDoubleSpinBox, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QSplitter, QTextEdit, QVBoxLayout,
-                               QWidget)
+                               QWidget, QMessageBox, QSizePolicy)
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.frontend.plotting.plot_pipelines import (convert_s_to_phase,
@@ -52,7 +52,7 @@ class LinearPhaseErrorDialog(QDialog):
         self._current_data = None  # Stores computed data for current selection
 
         self.setWindowTitle("Linear Phase Error Analysis")
-        self.resize(1200, 800)
+        self.resize(1000, 700)
 
         self._setup_ui()
         self._populate_datasets()
@@ -120,8 +120,8 @@ class LinearPhaseErrorDialog(QDialog):
         # Start frequency
         start_layout = QHBoxLayout()
         self._freq_start_input = QLineEdit()
-        self._freq_start_input.setPlaceholderText("e.g., 1e9, 1G, 1000M")
-        self._freq_start_input.setMinimumWidth(120)
+        self._freq_start_input.setPlaceholderText("e.g., 1e9, 1000")
+        self._freq_start_input.setMinimumWidth(80)
         start_layout.addWidget(self._freq_start_input)
 
         self._freq_start_unit = QComboBox()
@@ -135,8 +135,8 @@ class LinearPhaseErrorDialog(QDialog):
         # End frequency
         end_layout = QHBoxLayout()
         self._freq_end_input = QLineEdit()
-        self._freq_end_input.setPlaceholderText("e.g., 10e9, 10G, 10000M")
-        self._freq_end_input.setMinimumWidth(120)
+        self._freq_end_input.setPlaceholderText("e.g., 10e9, 10000")
+        self._freq_end_input.setMinimumWidth(80)
         end_layout.addWidget(self._freq_end_input)
 
         self._freq_end_unit = QComboBox()
@@ -189,17 +189,18 @@ class LinearPhaseErrorDialog(QDialog):
         fit_layout = QFormLayout(fit_group)
 
         self._slope_spin = QDoubleSpinBox()
-        self._slope_spin.setDecimals(6)
+        self._slope_spin.setDecimals(12)
         self._slope_spin.setRange(-1e12, 1e12)
-        self._slope_spin.setSingleStep(0.000001)
+        self._slope_spin.setSingleStep(0.000000001)
         self._slope_spin.valueChanged.connect(self._on_fit_parameter_changed)
         fit_layout.addRow("Slope (°/Hz):", self._slope_spin)
 
         self._intercept_spin = QDoubleSpinBox()
         self._intercept_spin.setDecimals(3)
         self._intercept_spin.setRange(-1e6, 1e6)
-        self._intercept_spin.setSingleStep(0.1)
+        self._intercept_spin.setSingleStep(0.01)
         self._intercept_spin.valueChanged.connect(self._on_fit_parameter_changed)
+        # self._intercept_spin.editingFinished.connect(self._on_fit_parameter_changed)
         fit_layout.addRow("Intercept (°):", self._intercept_spin)
 
         # Fit equation display with theme-friendly styling
@@ -229,13 +230,16 @@ class LinearPhaseErrorDialog(QDialog):
 
         self._stats_text = QTextEdit()
         self._stats_text.setReadOnly(True)
-        self._stats_text.setMaximumHeight(250)
         self._stats_text.setStyleSheet("font-family: 'Courier New', monospace; font-size: 10pt;")
         stats_layout.addWidget(self._stats_text)
 
-        layout.addWidget(stats_group)
+        # Make QTextEdit expand to fill available space
+        self._stats_text.setSizePolicy(
+            self._stats_text.sizePolicy().horizontalPolicy(),
+            QSizePolicy.Policy.Expanding
+        )
 
-        layout.addStretch()
+        layout.addWidget(stats_group, stretch=1)
 
         return widget
 
@@ -562,7 +566,6 @@ class LinearPhaseErrorDialog(QDialog):
         self.create_chart_requested.emit(chart_config)
 
         # Show confirmation
-        from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(
             self,
             "Chart Created",

@@ -61,7 +61,10 @@ class DatasetBrowserPanel(QWidget):
 
         # Title
         title_label = QLabel("Dataset Browser")
-        title_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #333;")
+        # Use the palette to set color for both light and dark themes
+        palette = title_label.palette()
+        text_color = palette.color(title_label.foregroundRole())
+        title_label.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {text_color.name()};")
         layout.addWidget(title_label)
 
         # Dataset tree
@@ -81,15 +84,18 @@ class DatasetBrowserPanel(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
-        layout.addWidget(self._dataset_tree)
+        # Create a splitter for tree and details
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
+        self._splitter.addWidget(self._dataset_tree)
 
-        # Dataset details
         details_group = QGroupBox("Dataset Details")
         details_layout = QVBoxLayout(details_group)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.setSpacing(0)
 
         self._details_scroll = QScrollArea()
         self._details_scroll.setWidgetResizable(True)
-        self._details_scroll.setMaximumHeight(150)
+        self._details_scroll.setMaximumHeight(16777215)  # Remove height limit
 
         self._details_widget = QWidget()
         self._details_layout = QVBoxLayout(self._details_widget)
@@ -103,7 +109,14 @@ class DatasetBrowserPanel(QWidget):
         self._details_scroll.setWidget(self._details_widget)
         details_layout.addWidget(self._details_scroll)
 
-        layout.addWidget(details_group)
+        self._splitter.addWidget(details_group)
+
+        # Set initial splitter sizes (2:1 ratio - tree larger than details)
+        self._splitter.setSizes([400, 200])
+        self._splitter.setCollapsible(0, False)  # Don't allow tree to collapse
+        self._splitter.setCollapsible(1, False)  # Don't allow details to collapse
+
+        layout.addWidget(self._splitter)
 
         # Action buttons
         button_layout = QHBoxLayout()

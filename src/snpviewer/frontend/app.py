@@ -94,7 +94,7 @@ class SnPViewerMainWindow(QMainWindow):
         self.setWindowTitle("SnP Viewer")
         self.setWindowIcon(QIcon(":/icons/snpviewer.ico"))
         self.setMinimumSize(1000, 700)
-        self.resize(1400, 900)
+        self.resize(1366, 768)
 
     def _setup_menus(self) -> None:
         """Setup the menu bar and actions."""
@@ -262,9 +262,13 @@ class SnPViewerMainWindow(QMainWindow):
         self._toolbar.addAction(self._open_folder_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._new_project_action)
+        self._toolbar.addAction(self._open_project_action)
         self._toolbar.addAction(self._save_project_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._create_chart_action)
+        self._toolbar.addSeparator()
+        self._toolbar.addAction(self._linear_phase_error_action)
+        self._toolbar.addAction(self._preferences_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._export_action)
 
