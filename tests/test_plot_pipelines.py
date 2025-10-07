@@ -168,7 +168,7 @@ class TestTraceParameterExtraction:
 
     def test_s11_extraction(self):
         """Test S11 parameter extraction."""
-        freq = np.array([1e6, 2e6, 3e6])
+        # freq = np.array([1e6, 2e6, 3e6])
         s_params = np.array([
             [[0.5+0.3j, 0.1+0.05j], [0.1+0.05j, 0.6+0.2j]],
             [[0.4+0.2j, 0.08+0.04j], [0.08+0.04j, 0.5+0.1j]],

@@ -459,7 +459,8 @@ class LinearPhaseErrorDialog(QDialog):
         phase_error = phase - phase_fit
 
         # Update equation label
-        self._equation_label.setText(f"Phase = {slope:.8e} × f + {intercept:.3f}")
+        self._equation_label.setText(f"Phase = {slope:.8e} × f + {intercept:.3f}" if intercept >= 0 else
+                                     f"Phase = {slope:.8e} × f - {abs(intercept):.3f}")
 
         # Calculate R²
         ss_res = np.sum(phase_error ** 2)
@@ -556,7 +557,11 @@ class LinearPhaseErrorDialog(QDialog):
             'intercept': intercept,
             'freq_start': self._current_data['freq_start'],
             'freq_end': self._current_data['freq_end'],
-            'equation': f"Phase = {slope:.8e} × f + {intercept:.3f}",
+            'equation': (
+                f"Phase = {slope:.8e} × f + {intercept:.3f}"
+                if intercept >= 0
+                else f"Phase = {slope:.8e} × f - {abs(intercept):.3f}"
+            ),
             'dataset_name': self._current_data['dataset_name']
         }
 

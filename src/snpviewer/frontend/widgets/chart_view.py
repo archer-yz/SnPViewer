@@ -1288,7 +1288,7 @@ class ChartView(QWidget):
         self._set_axis_label_with_styling('left', self._y_axis_label)
         self._set_axis_label_with_styling('bottom', 'Frequency', self._x_axis_unit)
 
-        # Set title with equation
+        # Set title
         title = f"{config.get('title', 'Linear Phase Error')}"
         self.set_chart_title(title)
 
@@ -1300,6 +1300,24 @@ class ChartView(QWidget):
 
         # Apply legend styling if available
         self._apply_legend_styling()
+
+        # add equation
+        equation = config.get('equation', '')
+        if equation:
+            # Create the equation text item
+            equation_item = pg.TextItem(equation, anchor=(0.5, 1), color=style.color)
+            # Add to plot
+            self._plot_item.addItem(equation_item)
+            # Position at top center under the title
+            view_box = self._plot_item.getViewBox()
+            x_range = view_box.viewRange()[0]
+            x_center = (x_range[0] + x_range[1]) / 2
+            # Get the top y value of the current view
+            y_range = view_box.viewRange()[1]
+            y_top = y_range[1]
+            # Offset a bit below the top (e.g., 3% of y span)
+            y_offset = (y_range[1] - y_range[0]) * 0.03
+            equation_item.setPos(x_center, y_top - y_offset)
 
     def create_phase_difference_plot(self, config: Dict[str, Any]) -> None:
         """
