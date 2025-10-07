@@ -6,28 +6,33 @@ and other RF parameter representations in Cartesian coordinates.
 """
 from __future__ import annotations
 
-import re
 import csv
-import numpy as np
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pyqtgraph as pg
-from pyqtgraph import LinearRegionItem, FillBetweenItem
+from pyqtgraph import FillBetweenItem, LinearRegionItem
 from pyqtgraph.exporters import ImageExporter
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy, QTabWidget,
-                               QVBoxLayout, QWidget, QMessageBox, QColorDialog, QComboBox, QDialog,
-                               QGroupBox, QPushButton, QSpinBox, QFileDialog, QInputDialog,
-                               QHeaderView, QTableWidget, QTableWidgetItem, QCheckBox, QLineEdit)
+from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
+                               QFileDialog, QGroupBox, QHBoxLayout,
+                               QHeaderView, QInputDialog, QLabel, QLineEdit,
+                               QMenu, QMessageBox, QPushButton, QSizePolicy,
+                               QSpinBox, QTableWidget, QTableWidgetItem,
+                               QTabWidget, QVBoxLayout, QWidget)
 
 from snpviewer.backend.models.dataset import Dataset
-from snpviewer.backend.models.trace import Trace, TraceStyle, PortPath
+from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.dialogs.common_dialogs import (
+    FontStylingWidget, PlotAreaPropertiesWidget)
+from snpviewer.frontend.dialogs.linear_phase_error import \
+    LinearPhaseErrorDialog
 from snpviewer.frontend.plotting.plot_pipelines import (
-    PlotData, PlotType, prepare_group_delay_data, prepare_magnitude_data,
-    prepare_phase_data, convert_s_to_phase, get_frequency_array, unwrap_phase)
-from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
-from snpviewer.frontend.dialogs.common_dialogs import FontStylingWidget, PlotAreaPropertiesWidget
+    PlotData, PlotType, convert_s_to_phase, get_frequency_array,
+    prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data,
+    unwrap_phase)
 
 
 class ChartView(QWidget):
@@ -702,6 +707,8 @@ class ChartView(QWidget):
             self._y_axis_label = 'Phase (°)'
         elif plot_type == PlotType.GROUP_DELAY:
             self._y_axis_label = 'Group Delay (ns)'
+        elif plot_type == PlotType.PHASE_DIFFERENCE:
+            self._y_axis_label = 'Phase Difference (°)'
 
         self._set_axis_label_with_styling('left', self._y_axis_label)
 
@@ -1060,7 +1067,8 @@ class ChartView(QWidget):
             PlotType.MAGNITUDE: "Magnitude",
             PlotType.PHASE: "Phase",
             PlotType.GROUP_DELAY: "Group Delay",
-            PlotType.LINEAR_PHASE_ERROR: "Linear Phase Error"
+            PlotType.LINEAR_PHASE_ERROR: "Linear Phase Error",
+            PlotType.PHASE_DIFFERENCE: "Phase Difference"
         }.get(self._plot_type, "Unknown")
 
     def _get_current_tab_title(self) -> str:
@@ -1291,6 +1299,126 @@ class ChartView(QWidget):
         self._plot_item.enableAutoRange(axis='y')
 
         # Apply legend styling if available
+        self._apply_legend_styling()
+
+    def create_phase_difference_plot(self, config: Dict[str, Any]) -> None:
+        """
+        Create a phase difference plot from configuration.
+
+        Args:
+            config: Configuration dictionary containing:
+                - reference_dataset_id: Reference dataset ID
+                - comparison_datasets: List of comparison dataset IDs
+                - sparam: S-parameter label (e.g., 'S1,1')
+                - i_port, j_port: S-parameter indices
+                - freq_start, freq_end: Frequency range
+                - unwrap_phase: Whether to unwrap phase
+                - differences: List of difference data for each comparison
+        """
+        # Set plot type
+        self._plot_type = PlotType.PHASE_DIFFERENCE
+
+        # Store configuration
+        self._phase_difference_config = config
+
+        # Clear existing items
+        self._plot_item.clear()
+        self._legend.clear()
+        self._traces.clear()
+        self._plot_items.clear()
+
+        # Plot each difference trace
+        differences = config.get('differences', [])
+        for diff_data in differences:
+            dataset_id = diff_data['dataset_id']
+            dataset_name = diff_data['dataset_name']
+            frequency = diff_data['frequency']
+            phase_diff = diff_data['phase_difference']
+            color = diff_data.get('color', '#FF6B6B')
+
+            # Create trace ID
+            sparam = config['sparam'].replace(',', '_')
+            trace_id = f"{dataset_id}:{sparam}_phase_difference"
+
+            # Create trace style (check if saved style exists in config)
+            if 'trace_styles' in config and trace_id in config['trace_styles']:
+                saved_style = config['trace_styles'][trace_id]
+                style = TraceStyle(
+                    color=saved_style.get('color', color),
+                    line_width=saved_style.get('line_width', 2),
+                    line_style=saved_style.get('line_style', 'solid'),
+                    marker_style=saved_style.get('marker_style', 'none'),
+                    marker_size=saved_style.get('marker_size', 8),
+                    visible=saved_style.get('visible', True)
+                )
+            else:
+                # Use default style with dialog color
+                style = TraceStyle(
+                    color=color,
+                    line_width=2,
+                    line_style='solid',
+                    marker_style='none'
+                )
+
+            # Create trace object
+            trace_label = f"{dataset_name} - {config.get('reference_dataset_name', 'Ref')}"
+            trace = Trace(
+                id=trace_id,
+                dataset_id=dataset_id,
+                domain="S",
+                metric="phase_difference",
+                port_path=PortPath(i=config['i_port']+1, j=config['j_port']+1),
+                style=style,
+                label=trace_label
+            )
+
+            # Store trace
+            self._traces[trace_id] = trace
+
+            # Plot with trace style
+            pen = pg.mkPen(
+                color=style.color,
+                width=style.line_width,
+                style=self._get_pen_style(style.line_style)
+            )
+
+            symbol = self._get_symbol(style.marker_style)
+            symbol_size = style.marker_size
+
+            plot_item = self._plot_item.plot(
+                frequency, phase_diff,
+                pen=pen,
+                symbol=symbol,
+                symbolSize=symbol_size,
+                name=trace_label
+            )
+
+            # Make plot item clickable for trace properties
+            plot_item.curve.setClickable(True, width=10)
+
+            # Connect click signal
+            plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
+
+            # Store plot item reference
+            self._plot_items[trace_id] = plot_item
+
+        # Set axis labels
+        self._y_axis_label = 'Phase Difference (°)'
+        self._set_axis_label_with_styling('left', self._y_axis_label)
+        self._set_axis_label_with_styling('bottom', 'Frequency', self._x_axis_unit)
+
+        # Set title
+        title = config.get('title', 'Phase Difference')
+        self.set_chart_title(title)
+
+        # Set frequency range
+        freq_start = config.get('freq_start')
+        freq_end = config.get('freq_end')
+        if freq_start and freq_end:
+            self._plot_item.setXRange(freq_start, freq_end, padding=0.02)
+            self._plot_item.enableAutoRange(axis='y')
+
+        # Apply legend styling
         self._apply_legend_styling()
 
     def get_existing_trace_ids(self) -> List[str]:
@@ -1787,6 +1915,154 @@ class ChartView(QWidget):
         # If this is a linear phase error chart, recreate the plot
         if config.get('type') == 'linear_phase_error':
             self.create_linear_phase_error_plot(config, dataset)
+
+    def get_phase_difference_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get phase difference configuration for serialization.
+
+        Only saves the parameters and metadata, NOT the frequency/phase_difference arrays,
+        which will be recalculated on load from the datasets.
+        """
+        if not hasattr(self, '_phase_difference_config'):
+            return None
+
+        # Make a copy of the config
+        config = self._phase_difference_config.copy()
+
+        # Remove array data from differences - keep only metadata
+        if 'differences' in config:
+            cleaned_differences = []
+            for diff in config['differences']:
+                # Keep only metadata, not arrays
+                cleaned_diff = {
+                    'dataset_id': diff['dataset_id'],
+                    'dataset_name': diff['dataset_name'],
+                    'color': diff.get('color', '#FF6B6B')
+                }
+                cleaned_differences.append(cleaned_diff)
+            config['differences'] = cleaned_differences
+
+        # Update with current trace styles if traces exist
+        if 'trace_styles' not in config:
+            config['trace_styles'] = {}
+
+        for trace_id, trace in self._traces.items():
+            if 'phase_difference' in trace_id:
+                config['trace_styles'][trace_id] = trace.style.to_dict()
+
+        return config
+
+    def restore_phase_difference_config(self, config: Dict[str, Any],
+                                        datasets: Dict[str, Dataset]) -> None:
+        """
+        Restore phase difference configuration from saved data.
+
+        Args:
+            config: Configuration dictionary with parameters
+            datasets: Dictionary of available datasets {dataset_id: Dataset}
+        """
+        if not config:
+            return
+
+        # Store configuration
+        self._phase_difference_config = config
+
+        # Recalculate phase differences from saved parameters
+        if config.get('type') == 'phase_difference':
+            # Need to recalculate differences from datasets
+            import numpy as np
+
+            from snpviewer.frontend.plotting.plot_pipelines import (
+                convert_s_to_phase, get_frequency_array, unwrap_phase)
+
+            ref_dataset_id = config.get('reference_dataset_id')
+            comparison_ids = config.get('comparison_datasets', [])
+            i_port = config.get('i_port', 0)
+            j_port = config.get('j_port', 0)
+            freq_start = config.get('freq_start', 0)
+            freq_end = config.get('freq_end', float('inf'))
+            unwrap = config.get('unwrap_phase', True)
+
+            # Get reference dataset
+            if ref_dataset_id not in datasets:
+                print(f"Warning: Reference dataset {ref_dataset_id} not found for phase difference restoration")
+                return
+
+            ref_dataset = datasets[ref_dataset_id]
+            ref_freq = get_frequency_array(ref_dataset, unit='Hz')
+            ref_s_param = ref_dataset.s_params[:, i_port, j_port]
+
+            # Filter by frequency range
+            mask = (ref_freq >= freq_start) & (ref_freq <= freq_end)
+            ref_freq_filtered = ref_freq[mask]
+            ref_s_param_filtered = ref_s_param[mask]
+
+            if len(ref_freq_filtered) < 2:
+                print("Warning: Insufficient frequency points for phase difference restoration")
+                return
+
+            # Calculate reference phase
+            ref_phase = convert_s_to_phase(ref_s_param_filtered, degrees=True)
+            if unwrap:
+                ref_phase = unwrap_phase(ref_phase)
+
+            # Recalculate differences
+            recalculated_differences = []
+            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
+
+            for idx, comp_id in enumerate(comparison_ids):
+                if comp_id not in datasets:
+                    print(f"Warning: Comparison dataset {comp_id} not found")
+                    continue
+
+                comp_dataset = datasets[comp_id]
+                comp_freq = get_frequency_array(comp_dataset, unit='Hz')
+                comp_s_param = comp_dataset.s_params[:, i_port, j_port]
+
+                # Filter by frequency range
+                comp_mask = (comp_freq >= freq_start) & (comp_freq <= freq_end)
+                comp_freq_filtered = comp_freq[comp_mask]
+                comp_s_param_filtered = comp_s_param[comp_mask]
+
+                # Calculate phase
+                comp_phase = convert_s_to_phase(comp_s_param_filtered, degrees=True)
+                if unwrap:
+                    comp_phase = unwrap_phase(comp_phase)
+
+                # Interpolate to reference frequency points if needed
+                if not np.array_equal(comp_freq_filtered, ref_freq_filtered):
+                    comp_phase = np.interp(ref_freq_filtered, comp_freq_filtered, comp_phase)
+
+                # Calculate difference
+                phase_diff = comp_phase - ref_phase
+
+                # Get display name
+                comp_display_name = getattr(
+                    comp_dataset, 'display_name',
+                    getattr(comp_dataset, 'file_name', comp_id)
+                )
+
+                # Preserve color from original differences if available
+                original_color = colors[idx % len(colors)]
+                if 'differences' in config:
+                    for orig_diff in config['differences']:
+                        if orig_diff['dataset_id'] == comp_id:
+                            original_color = orig_diff.get('color', original_color)
+                            break
+
+                recalculated_differences.append({
+                    'dataset_id': comp_id,
+                    'dataset_name': comp_display_name,
+                    'frequency': ref_freq_filtered,
+                    'phase_difference': phase_diff,
+                    'color': original_color
+                })
+
+            # Update config with recalculated differences
+            config['differences'] = recalculated_differences
+
+            # Recreate the plot
+            self.create_phase_difference_plot(config)
 
     def _apply_all_styling(self) -> None:
         """Apply all stored font and color styling to chart elements."""

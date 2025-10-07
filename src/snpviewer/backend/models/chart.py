@@ -140,6 +140,7 @@ class Chart:
     layout_options: Dict[str, Any] = field(default_factory=dict)
     phase_unwrap: bool = True  # Whether to unwrap phase for Phase charts
     linear_phase_error_data: Optional[Dict[str, Any]] = None  # Linear phase error analysis data
+    phase_difference_data: Optional[Dict[str, Any]] = None  # Phase difference analysis data
 
     def __post_init__(self) -> None:
         """Post-initialization to set default axes if not provided."""
@@ -354,7 +355,8 @@ class Chart:
             'updated_at': self.updated_at.isoformat(),
             'layout_options': self.layout_options,
             'phase_unwrap': self.phase_unwrap,
-            'linear_phase_error_data': self.linear_phase_error_data
+            'linear_phase_error_data': self.linear_phase_error_data,
+            'phase_difference_data': self.phase_difference_data
         }
 
     @classmethod
@@ -392,5 +394,6 @@ class Chart:
             updated_at=datetime.fromisoformat(data.get('updated_at', datetime.now().isoformat())),
             layout_options=data.get('layout_options', {}),
             phase_unwrap=data.get('phase_unwrap', True),
-            linear_phase_error_data=data.get('linear_phase_error_data')
+            linear_phase_error_data=data.get('linear_phase_error_data'),
+            phase_difference_data=data.get('phase_difference_data')
         )

@@ -11,16 +11,16 @@ import json
 import platform
 import sys
 import uuid
-import numpy as np
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 from PySide6 import QtGui
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
-                               QMainWindow, QMessageBox, QProgressBar, QWidget,
-                               QDialogButtonBox, QListWidget, QVBoxLayout)
+from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
+                               QFileDialog, QLabel, QListWidget, QMainWindow,
+                               QMessageBox, QProgressBar, QVBoxLayout, QWidget)
 
 import snpviewer.frontend.resources_rc  # noqa: F401
 from snpviewer.backend import parse_touchstone
@@ -31,14 +31,15 @@ from snpviewer.backend.models.project import DatasetRef, Preferences, Project
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
 from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
 from snpviewer.frontend.dialogs.create_chart import CreateChartDialog
+from snpviewer.frontend.dialogs.linear_phase_error import \
+    LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.preferences import PreferencesDialog
 from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
 from snpviewer.frontend.plotting.plot_pipelines import PlotType
 from snpviewer.frontend.services.loader import ThreadedLoader
 from snpviewer.frontend.widgets.chart_view import ChartView
 from snpviewer.frontend.widgets.panels import MainPanelLayout
 from snpviewer.frontend.widgets.smith_view import SmithView
-from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
-from snpviewer.frontend.dialogs.preferences import PreferencesDialog
 
 
 class SnPViewerMainWindow(QMainWindow):
@@ -233,6 +234,13 @@ class SnPViewerMainWindow(QMainWindow):
         self._linear_phase_error_action.triggered.connect(self._show_linear_phase_error_analysis)
         tools_menu.addAction(self._linear_phase_error_action)
 
+        # Phase Difference Analysis action
+        self._phase_difference_action = QAction("&Phase Difference Analysis...", self)
+        self._phase_difference_action.setShortcut(QKeySequence("Ctrl+D"))
+        self._phase_difference_action.setStatusTip("Compare phase differences between datasets")
+        self._phase_difference_action.triggered.connect(self._show_phase_difference_analysis)
+        tools_menu.addAction(self._phase_difference_action)
+
         tools_menu.addSeparator()
 
         # Preferences action
@@ -272,7 +280,7 @@ class SnPViewerMainWindow(QMainWindow):
         self._toolbar.addAction(self._create_chart_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._linear_phase_error_action)
-        self._toolbar.addAction(self._preferences_action)
+        self._toolbar.addAction(self._phase_difference_action)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._export_action)
 
@@ -678,6 +686,24 @@ class SnPViewerMainWindow(QMainWindow):
                     if hasattr(chart_widget, 'get_linear_phase_error_config'):
                         chart.linear_phase_error_data = chart_widget.get_linear_phase_error_config()
                         # chart.trace_ids = [chart.linear_phase_error_data.get('trace_id', '')]
+                    # Update phase difference data
+                    if hasattr(chart_widget, 'get_phase_difference_config'):
+                        phase_diff_data = chart_widget.get_phase_difference_config()
+                        if phase_diff_data:
+                            # Remove numpy arrays from differences (they will be recalculated on load)
+                            cleaned_data = phase_diff_data.copy()
+                            if 'differences' in cleaned_data:
+                                cleaned_differences = []
+                                for diff in cleaned_data['differences']:
+                                    # Keep only the metadata, not the array data
+                                    cleaned_diff = {
+                                        'dataset_id': diff['dataset_id'],
+                                        'dataset_name': diff['dataset_name'],
+                                        'color': diff.get('color', '#FF6B6B')
+                                    }
+                                    cleaned_differences.append(cleaned_diff)
+                                cleaned_data['differences'] = cleaned_differences
+                            chart.phase_difference_data = cleaned_data
 
     def _save_project_to_path(self, file_path: Path, update_current_path: bool = True) -> bool:
         """
@@ -1044,6 +1070,111 @@ class SnPViewerMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Chart Creation Error",
                                  f"Failed to create Linear Phase Error chart: {str(e)}")
+
+    def _on_create_phase_difference_chart(self, config: dict) -> None:
+        """
+        Handle request to create a new Phase Difference chart.
+
+        Args:
+            config: Chart configuration dictionary containing:
+                - type: 'phase_difference'
+                - title: Chart title
+                - reference_dataset_id: Reference dataset ID
+                - comparison_datasets: List of comparison dataset IDs
+                - sparam: S-parameter label (e.g., 'S1,1')
+                - i_port, j_port: S-parameter indices
+                - freq_start, freq_end: Frequency range
+                - unwrap_phase: Whether to unwrap phase
+                - differences: List of difference data for each comparison
+        """
+        try:
+            # Get reference dataset
+            ref_dataset_id = config.get('reference_dataset_id')
+            if not ref_dataset_id:
+                QMessageBox.warning(self, "Error", "No reference dataset specified for chart")
+                return
+
+            # Verify reference dataset exists
+            ref_dataset = self._main_panels.dataset_browser.get_dataset(ref_dataset_id)
+            if not ref_dataset:
+                QMessageBox.warning(self, "Error",
+                                    f"Could not find reference dataset '{ref_dataset_id}'")
+                return
+
+            # Verify comparison datasets exist
+            comparison_ids = config.get('comparison_datasets', [])
+            for comp_id in comparison_ids:
+                if not self._main_panels.dataset_browser.get_dataset(comp_id):
+                    QMessageBox.warning(self, "Error",
+                                        f"Could not find comparison dataset '{comp_id}'")
+                    return
+
+            # Get the next chart number for naming
+            chart_number = self._main_panels.charts_area.get_next_chart_number()
+
+            # Create a new chart widget
+            chart_widget = ChartView()
+
+            # Connect signals
+            chart_widget.properties_changed.connect(
+                lambda: self._set_modified(True)
+            )
+
+            # Set chart title and tab title
+            chart_widget.set_chart_tab_title(f"Chart{chart_number}")
+            chart_widget.set_chart_title(config.get('title', 'Phase Difference'))
+
+            # Create the phase difference plot using the chart_view method
+            from snpviewer.frontend.widgets.chart_view import \
+                ChartView as ChartViewClass
+            if hasattr(ChartViewClass, 'create_phase_difference_plot'):
+                chart_widget.create_phase_difference_plot(config)
+            else:
+                raise NotImplementedError("create_phase_difference_plot not yet implemented in ChartView")
+
+            # Create chart ID and model
+            chart_id = str(uuid.uuid4())[:8]
+
+            # Build trace_ids list for all comparison traces
+            trace_ids = []
+            for diff_data in config.get('differences', []):
+                dataset_id = diff_data['dataset_id']
+                sparam = config['sparam'].replace(',', '_')
+                trace_id = f"{dataset_id}:{sparam}_phase_difference"
+                trace_ids.append(trace_id)
+
+            x_axis = AxisConfiguration(unit="Hz", label="Frequency", scale="linear")
+            y_axis = AxisConfiguration(unit="°", label="Phase Difference")
+            axes = ChartAxes(x=x_axis, y=y_axis)
+
+            chart = Chart(
+                id=chart_id,
+                tab_title=chart_widget._tab_title,
+                title=chart_widget.get_chart_title(),
+                chart_type='PhaseDifference',
+                trace_ids=trace_ids,
+                limit_lines={},
+                axes=axes,
+                phase_difference_data=config
+            )
+
+            # Add chart to charts area - use reference dataset as primary dataset
+            self._main_panels.charts_area.add_chart(chart_id, chart, chart_widget, ref_dataset_id)
+
+            # Apply default styling
+            self._apply_default_chart_styling(chart_widget)
+
+            # Update project if we have one
+            if self._current_project:
+                self._current_project.add_chart(chart)
+                self._set_modified(True)
+
+            msg = f"Created Phase Difference chart comparing {len(comparison_ids)} dataset(s) against reference"
+            self.statusBar().showMessage(msg)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Chart Creation Error",
+                                 f"Failed to create Phase Difference chart: {str(e)}")
 
     def _apply_default_chart_styling(self, chart_widget: ChartView | SmithView) -> None:
         """
@@ -1645,11 +1776,19 @@ class SnPViewerMainWindow(QMainWindow):
                             chart_dataset_ids.add(dataset_id)
 
                     # Special handling for linear phase error charts - check config for dataset_id
-                    if not chart_dataset_ids:
-                        if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
-                            config_dataset_id = chart.linear_phase_error_data.get('dataset_id')
-                            if config_dataset_id:
-                                chart_dataset_ids.add(config_dataset_id)
+                    if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
+                        config_dataset_id = chart.linear_phase_error_data.get('dataset_id')
+                        if config_dataset_id:
+                            chart_dataset_ids.add(config_dataset_id)
+
+                    # Special handling for phase difference charts - check config for dataset_ids
+                    if hasattr(chart, 'phase_difference_data') and chart.phase_difference_data:
+                        ref_dataset_id = chart.phase_difference_data.get('reference_dataset_id')
+                        if ref_dataset_id:
+                            chart_dataset_ids.add(ref_dataset_id)
+                        comparison_ids = chart.phase_difference_data.get('comparison_datasets', [])
+                        for comp_id in comparison_ids:
+                            chart_dataset_ids.add(comp_id)
 
                     if not chart_dataset_ids:
                         print(f"Warning: Chart {chart.id} has no valid trace_ids with dataset references")
@@ -1685,7 +1824,7 @@ class SnPViewerMainWindow(QMainWindow):
 
                         # Restore the traces that were in this chart (NEW: multi-dataset support)
                         # Skip trace restoration for linear phase error charts (they use custom config)
-                        if chart.chart_type.lower() != 'linearphaseerror':
+                        if chart.chart_type.lower() not in ['linearphaseerror', 'phasedifference']:
                             # Pass saved trace data if available for style preservation
                             saved_traces = getattr(chart, 'traces', {})
                             self._restore_chart_traces_multi_dataset(
@@ -1715,6 +1854,12 @@ class SnPViewerMainWindow(QMainWindow):
                                     lpe_dataset = chart_datasets.get(lpe_dataset_id) if lpe_dataset_id else None
                                     chart_widget.restore_linear_phase_error_config(
                                         chart.linear_phase_error_data, lpe_dataset
+                                    )
+                            # Restore phase difference data
+                            if hasattr(chart, 'phase_difference_data') and chart.phase_difference_data:
+                                if hasattr(chart_widget, 'restore_phase_difference_config'):
+                                    chart_widget.restore_phase_difference_config(
+                                        chart.phase_difference_data, chart_datasets
                                     )
                         except Exception as e:
                             print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
@@ -1990,6 +2135,34 @@ class SnPViewerMainWindow(QMainWindow):
         dialog.create_chart_requested.connect(self._on_create_linear_phase_error_chart)
         dialog.exec()
 
+    def _show_phase_difference_analysis(self) -> None:
+        """Show the Phase Difference Analysis dialog."""
+        # Get all datasets from the dataset browser
+        datasets = self._main_panels.dataset_browser._datasets
+
+        if not datasets:
+            QMessageBox.information(
+                self,
+                "No Datasets",
+                "No datasets are available. Please load data files first."
+            )
+            return
+
+        if len(datasets) < 2:
+            QMessageBox.information(
+                self,
+                "Insufficient Datasets",
+                "At least two datasets are required for phase difference analysis."
+            )
+            return
+
+        # Create and show the dialog
+        from snpviewer.frontend.dialogs.phase_difference import \
+            PhaseDifferenceDialog
+        dialog = PhaseDifferenceDialog(datasets, self)
+        dialog.create_chart_requested.connect(self._on_create_phase_difference_chart)
+        dialog.exec()
+
     def _show_about(self) -> None:
         """Show about dialog."""
         QMessageBox.about(
@@ -2117,6 +2290,8 @@ class SnPViewerMainWindow(QMainWindow):
                     chart_widget.set_plot_type(PlotType.GROUP_DELAY)
                 elif chart_type.lower() in ["linearphaseerror", "linear_phase_error"]:
                     chart_widget.set_plot_type(PlotType.LINEAR_PHASE_ERROR)
+                elif chart_type.lower() in ["phasedifference", "phase_difference"]:
+                    chart_widget.set_plot_type(PlotType.PHASE_DIFFERENCE)
 
                 return chart_widget
 

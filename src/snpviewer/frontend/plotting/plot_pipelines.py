@@ -23,6 +23,7 @@ class PlotType(Enum):
     GROUP_DELAY = "group_delay"
     SMITH = "smith"
     LINEAR_PHASE_ERROR = "linear_phase_error"
+    PHASE_DIFFERENCE = "phase_difference"
 
 
 @dataclass
