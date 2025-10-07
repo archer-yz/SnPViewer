@@ -671,8 +671,14 @@ class SnPViewerMainWindow(QMainWindow):
                         chart.linear_phase_error_data = chart_widget.get_linear_phase_error_config()
                         # chart.trace_ids = [chart.linear_phase_error_data.get('trace_id', '')]
 
-    def _save_project_to_path(self, file_path: Path) -> bool:
-        """Save project to specified path."""
+    def _save_project_to_path(self, file_path: Path, update_current_path: bool = True) -> bool:
+        """
+        Save project to specified path.
+
+        Args:
+            file_path: Path to save the project to
+            update_current_path: Whether to update self._current_project_path (False for backups)
+        """
         try:
             self._show_progress("Saving project...", 0)
 
@@ -688,7 +694,10 @@ class SnPViewerMainWindow(QMainWindow):
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
-            self._current_project_path = file_path
+            # Only update current path if this is a regular save (not autosave/backup)
+            if update_current_path:
+                self._current_project_path = file_path
+
             self._set_modified(False)
             self._update_window_title()
 
@@ -1922,7 +1931,8 @@ class SnPViewerMainWindow(QMainWindow):
         if self._current_project_path:
             try:
                 backup_path = self._current_project_path.with_suffix('.snpproj.bak')
-                self._save_project_to_path(backup_path)
+                # Don't update current path when autosaving to backup
+                self._save_project_to_path(backup_path, update_current_path=False)
             except Exception:
                 # Silently ignore autosave errors
                 pass
