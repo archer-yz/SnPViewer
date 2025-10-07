@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout,
                                QLabel, QMenu, QSizePolicy, QVBoxLayout,
-                               QWidget)
+                               QWidget, QFileDialog)
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import Trace, TraceStyle
@@ -498,7 +498,6 @@ class SmithView(QWidget):
 
     def _export_image_dialog(self):
         """Show export image dialog."""
-        from PySide6.QtWidgets import QFileDialog
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Smith Chart", "", "PNG Files (*.png);;All Files (*)"
         )
@@ -507,7 +506,6 @@ class SmithView(QWidget):
 
     def _export_data_dialog(self):
         """Show export data dialog."""
-        from PySide6.QtWidgets import QFileDialog
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Data", "", "CSV Files (*.csv);;All Files (*)"
         )

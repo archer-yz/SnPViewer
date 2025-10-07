@@ -11,6 +11,7 @@ import json
 import platform
 import sys
 import uuid
+import numpy as np
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +19,8 @@ from PySide6 import QtGui
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel,
-                               QMainWindow, QMessageBox, QProgressBar, QWidget)
+                               QMainWindow, QMessageBox, QProgressBar, QWidget,
+                               QDialogButtonBox, QListWidget, QVBoxLayout)
 
 import snpviewer.frontend.resources_rc  # noqa: F401
 from snpviewer.backend import parse_touchstone
@@ -35,6 +37,8 @@ from snpviewer.frontend.services.loader import ThreadedLoader
 from snpviewer.frontend.widgets.chart_view import ChartView
 from snpviewer.frontend.widgets.panels import MainPanelLayout
 from snpviewer.frontend.widgets.smith_view import SmithView
+from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.preferences import PreferencesDialog
 
 
 class SnPViewerMainWindow(QMainWindow):
@@ -997,7 +1001,6 @@ class SnPViewerMainWindow(QMainWindow):
             # chart_widget.set_chart_title(config.get('title', 'Linear Phase Error'))
 
             # Convert numpy arrays to lists if needed (for JSON serialization later)
-            import numpy as np
             if isinstance(config.get('frequency'), np.ndarray):
                 config['frequency'] = config['frequency'].tolist()
             if isinstance(config.get('error'), np.ndarray):
@@ -1253,10 +1256,6 @@ class SnPViewerMainWindow(QMainWindow):
         Opens a dialog to select chart type, datasets, and S-parameters, then creates
         a new chart with traces for all selected dataset×parameter combinations.
         """
-        from PySide6.QtWidgets import QMessageBox
-
-        from snpviewer.frontend.widgets.chart_view import PlotType
-
         # Get available datasets
         datasets = self._main_panels.dataset_browser._datasets
         if not datasets:
@@ -1401,9 +1400,6 @@ class SnPViewerMainWindow(QMainWindow):
             dataset_id: The dataset ID containing the parameter
             param_name: The S-parameter name (e.g., "S1,1")
         """
-        from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QLabel,
-                                       QListWidget, QMessageBox, QVBoxLayout)
-
         # Get available charts
         chart_list = self._main_panels.charts_area.get_chart_list()
 
@@ -1534,7 +1530,6 @@ class SnPViewerMainWindow(QMainWindow):
 
         if chart_type:
             # For ChartView, map plot type to metric
-            from snpviewer.frontend.widgets.chart_view import PlotType
             if chart_type == PlotType.MAGNITUDE:
                 metric = "magnitude_dB"
             elif chart_type == PlotType.PHASE:
@@ -1549,9 +1544,6 @@ class SnPViewerMainWindow(QMainWindow):
 
         # Add the trace to the chart
         if hasattr(chart_widget, 'add_trace'):
-            from snpviewer.backend.models.trace import (PortPath, Trace,
-                                                        TraceStyle)
-
             # Pick a color from a palette (cycling through available colors)
             colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
                       "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
@@ -1944,8 +1936,6 @@ class SnPViewerMainWindow(QMainWindow):
     # Dialog Methods
     def _show_preferences(self) -> None:
         """Show preferences dialog with persistent storage."""
-        from snpviewer.frontend.dialogs.preferences import PreferencesDialog
-
         # Load preferences from persistent storage or project
         if self._current_project and self._current_project.preferences:
             # Use project preferences if available
@@ -1994,10 +1984,6 @@ class SnPViewerMainWindow(QMainWindow):
                 "No datasets are available. Please load data files first."
             )
             return
-
-        # Import the dialog
-        from snpviewer.frontend.dialogs.linear_phase_error import \
-            LinearPhaseErrorDialog
 
         # Create and show the dialog
         dialog = LinearPhaseErrorDialog(datasets, self)
@@ -2153,9 +2139,6 @@ class SnPViewerMainWindow(QMainWindow):
             saved_traces: Optional dict of saved trace data {trace_id: trace_dict} for style preservation
         """
         try:
-            from snpviewer.backend.models.trace import (PortPath, Trace,
-                                                        TraceStyle)
-
             traces_to_add = []
             colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
                       "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]

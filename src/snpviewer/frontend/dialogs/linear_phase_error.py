@@ -361,12 +361,10 @@ class LinearPhaseErrorDialog(QDialog):
                 self._freq_end_unit.currentText()
             )
         except ValueError as e:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Frequency", str(e))
             return
 
         if freq_start >= freq_end:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self,
                 "Invalid Range",

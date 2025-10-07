@@ -10,7 +10,8 @@ Provides conversions between different network parameter representations:
 All functions support broadcasting over multiple frequency points.
 """
 from __future__ import annotations
-
+from datetime import datetime
+from pathlib import Path
 import numpy as np
 
 from snpviewer.backend.models.dataset import Dataset
@@ -516,9 +517,6 @@ def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None):
     Returns:
         Dataset object with converted data
     """
-    from datetime import datetime
-    from pathlib import Path
-
     if metadata is None:
         metadata = {}
 

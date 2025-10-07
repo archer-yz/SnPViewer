@@ -6,6 +6,7 @@ that are shared between ChartView and PreferencesDialog.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
 
 from PySide6.QtGui import QColor, QFont
@@ -563,7 +564,6 @@ class PlotAreaPropertiesWidget(QWidget):
     def _choose_background_color(self) -> None:
         """Open color dialog for background color."""
         # Extract current color from button stylesheet
-        import re
         match = re.search(r'background-color:\s*(\S+);', self._bg_color_btn.styleSheet())
         current_color_str = match.group(1) if match else 'white'
         current_color = QColor(current_color_str)
@@ -577,7 +577,6 @@ class PlotAreaPropertiesWidget(QWidget):
     def _choose_border_color(self) -> None:
         """Open color dialog for border color."""
         # Extract current color from button stylesheet
-        import re
         match = re.search(r'background-color:\s*(\S+);', self._border_color_btn.styleSheet())
         current_color_str = match.group(1) if match else '#333333'
         current_color = QColor(current_color_str)
@@ -651,8 +650,6 @@ class PlotAreaPropertiesWidget(QWidget):
         Returns:
             Dictionary of plot area settings
         """
-        import re
-
         # Extract colors from button stylesheets
         bg_match = re.search(r'background-color:\s*(\S+);', self._bg_color_btn.styleSheet())
         bg_color = bg_match.group(1) if bg_match else 'white'

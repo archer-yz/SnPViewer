@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QMenu, QMessageBox,
                                QPushButton, QScrollArea, QSplitter, QTabBar,
                                QTabWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget, QInputDialog)
 
 from snpviewer.backend.models.chart import Chart
 from snpviewer.backend.models.dataset import Dataset
@@ -529,8 +529,6 @@ class DatasetBrowserPanel(QWidget):
 
     def _show_rename_dialog(self, dataset_id: str) -> None:
         """Show dialog to rename a dataset."""
-        from PySide6.QtWidgets import QInputDialog
-
         base_dataset_id = dataset_id.split(':')[0]
         current_name = self.get_display_name(base_dataset_id)
 

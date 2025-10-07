@@ -6,19 +6,28 @@ and other RF parameter representations in Cartesian coordinates.
 """
 from __future__ import annotations
 
+import re
+import csv
+import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 
 import pyqtgraph as pg
+from pyqtgraph import LinearRegionItem, FillBetweenItem
+from pyqtgraph.exporters import ImageExporter
 from PySide6.QtCore import QPoint, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSizePolicy, QTabWidget,
+                               QVBoxLayout, QWidget, QMessageBox, QColorDialog, QComboBox, QDialog,
+                               QGroupBox, QPushButton, QSpinBox, QFileDialog, QInputDialog,
+                               QHeaderView, QTableWidget, QTableWidgetItem, QCheckBox, QLineEdit)
 
 from snpviewer.backend.models.dataset import Dataset
-from snpviewer.backend.models.trace import Trace, TraceStyle
+from snpviewer.backend.models.trace import Trace, TraceStyle, PortPath
 from snpviewer.frontend.plotting.plot_pipelines import (
     PlotData, PlotType, prepare_group_delay_data, prepare_magnitude_data,
-    prepare_phase_data)
+    prepare_phase_data, convert_s_to_phase, get_frequency_array, unwrap_phase)
+from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.common_dialogs import FontStylingWidget, PlotAreaPropertiesWidget
 
 
 class ChartView(QWidget):
@@ -295,14 +304,8 @@ class ChartView(QWidget):
     def _show_trace_selection_dialog(self) -> None:
         """Show combined trace selection and properties dialog."""
         if not self._traces:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self, "No Traces", "No traces are currently displayed in this chart.")
             return
-
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import (QColorDialog, QComboBox, QDialog,
-                                       QGroupBox, QHBoxLayout, QLabel,
-                                       QPushButton, QSpinBox, QVBoxLayout)
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Trace Properties")
@@ -448,14 +451,8 @@ class ChartView(QWidget):
     def _show_limit_line_selection_dialog(self) -> None:
         """Show combined limit line selection and properties dialog."""
         if not self._limit_lines:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self, "No Limit Lines", "No limit lines are currently displayed in this chart.")
             return
-
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import (QColorDialog, QComboBox, QDialog,
-                                       QGroupBox, QHBoxLayout, QLabel,
-                                       QPushButton, QSpinBox, QVBoxLayout)
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Limit Line Properties")
@@ -937,7 +934,6 @@ class ChartView(QWidget):
 
     def _export_image(self) -> None:
         """Export the current plot as an image."""
-        from PySide6.QtWidgets import QFileDialog
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -948,15 +944,11 @@ class ChartView(QWidget):
 
         if file_path:
             # Export the plot as an image using pyqtgraph's ImageExporter
-            from pyqtgraph.exporters import ImageExporter
             exporter = ImageExporter(self._plot_item)
             exporter.export(file_path)
 
     def _export_data(self) -> None:
         """Export the current plot data as CSV."""
-        import csv
-
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         if not self._traces:
             QMessageBox.information(self, "No Data", "No traces to export.")
@@ -1088,7 +1080,6 @@ class ChartView(QWidget):
 
     def _change_chart_title(self) -> None:
         """Show dialog to change the chart title (plot widget title)."""
-        from PySide6.QtWidgets import QInputDialog
 
         current_title = self._chart_title or "S-Parameter Plot"
         new_title, ok = QInputDialog.getText(
@@ -1103,7 +1094,6 @@ class ChartView(QWidget):
 
     def _change_tab_title(self) -> None:
         """Show dialog to change the tab title."""
-        from PySide6.QtWidgets import QInputDialog
 
         current_name = self._tab_title or "Chart"
         new_name, ok = QInputDialog.getText(
@@ -1127,17 +1117,12 @@ class ChartView(QWidget):
     def _show_linear_phase_error_dialog(self) -> None:
         """Show the linear phase error analysis dialog."""
         if not self._datasets:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
                 self,
                 "No Data",
                 "No datasets are available. Please load data first."
             )
             return
-
-        # Import the dialog class
-        from snpviewer.frontend.dialogs.linear_phase_error import \
-            LinearPhaseErrorDialog
 
         # Create and show the dialog
         dialog = LinearPhaseErrorDialog(self._datasets, parent=self)
@@ -1164,7 +1149,6 @@ class ChartView(QWidget):
                 - Optional: frequency, error (will be recalculated if missing)
             dataset: Optional dataset to use for recalculation
         """
-        from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
 
         dataset_id = config.get('dataset_id', '')
         i_port = config.get('i_port', 0)
@@ -1337,7 +1321,6 @@ class ChartView(QWidget):
 
     def _remove_all_traces(self) -> None:
         """Remove all traces from the chart."""
-        from PySide6.QtWidgets import QMessageBox
 
         if not self._traces:
             QMessageBox.information(self, "No Traces", "No traces to remove.")
@@ -1355,7 +1338,6 @@ class ChartView(QWidget):
 
     def _add_limit_line(self, line_type: str) -> None:
         """Add a limit line to the chart."""
-        from PySide6.QtWidgets import QInputDialog
 
         # Get the appropriate prompt based on line type
         if line_type == 'horizontal':
@@ -1384,7 +1366,6 @@ class ChartView(QWidget):
                 # For Y values, just parse as float
                 value = float(value_str.strip())
         except ValueError as e:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Value", f"Could not parse '{value_str}': {str(e)}")
             return
 
@@ -1456,7 +1437,6 @@ class ChartView(QWidget):
 
     def _remove_all_limits(self) -> None:
         """Remove all limit lines from the chart."""
-        from PySide6.QtWidgets import QMessageBox
 
         if not self._limit_lines:
             QMessageBox.information(self, "No Limit Lines", "No limit lines to remove.")
@@ -1638,8 +1618,6 @@ class ChartView(QWidget):
         if not font_data:
             return
 
-        from PySide6.QtGui import QFont
-
         self._chart_fonts = {}
         for key, font_info in font_data.items():
             try:
@@ -1736,9 +1714,6 @@ class ChartView(QWidget):
         Returns:
             Tuple of (frequency_array, error_array)
         """
-        from snpviewer.frontend.plotting.plot_pipelines import (
-            convert_s_to_phase, get_frequency_array, unwrap_phase)
-
         # Extract parameters
         slope = config['slope']
         intercept = config['intercept']
@@ -1878,8 +1853,6 @@ class ChartView(QWidget):
 
     def _add_limit_range(self, range_type: str) -> None:
         """Add a limit range (filled region) to the chart."""
-        from PySide6.QtWidgets import QInputDialog
-
         # Get the appropriate prompts based on range type
         if range_type == 'horizontal':
             # Horizontal range = frequency band (X-axis range)
@@ -1917,12 +1890,10 @@ class ChartView(QWidget):
                 min_value = float(min_value_str.strip())
                 max_value = float(max_value_str.strip())
         except ValueError as e:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Value", f"Could not parse values: {str(e)}")
             return
 
         if min_value >= max_value:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Range", "Maximum value must be greater than minimum value.")
             return
 
@@ -1944,14 +1915,11 @@ class ChartView(QWidget):
         # Create filled region
         if range_type == 'horizontal':
             # Horizontal range = frequency band (X-axis range)
-            from pyqtgraph import LinearRegionItem
             fill_item = LinearRegionItem(values=[min_value, max_value], brush=pg.mkBrush(255, 0, 0, 50))
             fill_item.setMovable(True)
         else:  # vertical - value range (Y-axis range)
             # Create a filled region between two Y values
             # We'll use a FillBetweenItem or create a polygon fill
-            import numpy as np
-
             # Get the current X range to span the fill across
             view_range = self._plot_item.viewRange()
             x_min, x_max = view_range[0]
@@ -1963,7 +1931,6 @@ class ChartView(QWidget):
 
             # Create fill between item
             try:
-                from pyqtgraph import FillBetweenItem
                 fill_item = FillBetweenItem(
                     curve1=pg.PlotCurveItem(x_values, y1_values),
                     curve2=pg.PlotCurveItem(x_values, y2_values),
@@ -2053,11 +2020,6 @@ class ChartView(QWidget):
 
     def _add_points_limit(self) -> None:
         """Add a point-based limit line to the chart."""
-        from PySide6.QtWidgets import (QDialog, QHBoxLayout, QHeaderView,
-                                       QLabel, QMessageBox, QPushButton,
-                                       QTableWidget, QTableWidgetItem,
-                                       QVBoxLayout)
-
         # Create a custom dialog with table input
         dialog = QDialog(self)
         dialog.setWindowTitle("Point-Based Limit Line")
@@ -2107,7 +2069,6 @@ class ChartView(QWidget):
                 table.removeRow(current_row)
 
         def show_context_menu(pos):
-            from PySide6.QtWidgets import QMenu
             menu = QMenu()
 
             add_action = menu.addAction("Add Row")
@@ -2176,7 +2137,6 @@ class ChartView(QWidget):
         label_layout = QVBoxLayout(label_dialog)
 
         # Label input
-        from PySide6.QtWidgets import QCheckBox, QLineEdit
         label_input = QLineEdit()
         label_input.setPlaceholderText("Enter label for point-based limit (optional)")
         label_layout.addWidget(QLabel("Label:"))
@@ -2358,11 +2318,6 @@ class ChartView(QWidget):
 
     def _show_font_styling_dialog(self) -> None:
         """Show font styling dialog for chart elements."""
-        from PySide6.QtWidgets import (QDialog, QHBoxLayout, QPushButton,
-                                       QTabWidget, QVBoxLayout)
-
-        from snpviewer.frontend.dialogs.common_dialogs import FontStylingWidget
-
         dialog = QDialog(self)
         dialog.setWindowTitle("Font Styling")
         dialog.setModal(True)
@@ -2371,7 +2326,6 @@ class ChartView(QWidget):
         layout = QVBoxLayout(dialog)
 
         # Load existing stored fonts and colors, or use defaults
-        from PySide6.QtGui import QFont
         current_fonts = {
             'title': QFont("Arial", 12, QFont.Weight.Bold),
             'x_axis': QFont("Arial", 10),
@@ -2455,12 +2409,6 @@ class ChartView(QWidget):
 
     def _show_plot_area_properties_dialog(self) -> None:
         """Show plot area properties dialog for customizing borders, background, grid, etc."""
-        from PySide6.QtWidgets import (QDialog, QHBoxLayout, QPushButton,
-                                       QVBoxLayout)
-
-        from snpviewer.frontend.dialogs.common_dialogs import \
-            PlotAreaPropertiesWidget
-
         dialog = QDialog(self)
         dialog.setWindowTitle("Plot Area Properties")
         dialog.setModal(True)
@@ -2910,7 +2858,6 @@ class ChartView(QWidget):
 
             # Method 2: Try to set default text color
             if hasattr(legend, 'setDefaultTextColor'):
-                from PySide6.QtGui import QColor
                 legend.setDefaultTextColor(QColor('#000000'))
 
             # Method 3: Apply to individual items as they get added
@@ -2931,7 +2878,6 @@ class ChartView(QWidget):
 
             # Method 2: Apply to individual items
             if hasattr(legend, 'items') and legend.items:
-                from PySide6.QtGui import QColor
                 qcolor = QColor(color)
 
                 for sample, label in legend.items:
@@ -2954,7 +2900,6 @@ class ChartView(QWidget):
                         if hasattr(label, 'setText') and hasattr(label, 'text'):
                             current_text = label.text if callable(label.text) else str(label.text)
                             # Strip existing color tags first
-                            import re
                             clean_text = re.sub(r'<span[^>]*>(.*?)</span>', r'\1', current_text)
                             clean_text = re.sub(r'<font[^>]*>(.*?)</font>', r'\1', clean_text)
                             colored_text = f'<span style="color:{color}">{clean_text}</span>'

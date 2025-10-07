@@ -20,7 +20,6 @@ A professional RF Touchstone (.sNp) parameter viewer with advanced visualization
 ### 🎯 **Advanced Limit Lines System**
 
 - **5 Limit Line Types**: Horizontal, Vertical, Point-based, Horizontal Range, Vertical Range
-- **Smart Input Parsing**: Supports scientific notation (1e9), engineering suffixes (1G, 2.4GHz)
 - **Custom Styling**: Color, line style, width, and labeling options
 - **Range Validation**: Input validation with helpful error messages
 - **Project Persistence**: All limit lines saved with projects
