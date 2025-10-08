@@ -33,6 +33,7 @@ from snpviewer.frontend.plotting.plot_pipelines import (
     PlotData, PlotType, convert_s_to_phase, get_frequency_array,
     prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data,
     unwrap_phase)
+from snpviewer.frontend.widgets.markers import MarkerController
 
 
 class ChartView(QWidget):
@@ -80,10 +81,16 @@ class ChartView(QWidget):
         self._traces: Dict[str, Trace] = {}
         self._plot_items: Dict[str, pg.PlotDataItem] = {}
         self._datasets: Dict[str, Dataset] = {}
+        self._trace_id_to_label: Dict[str, str] = {}  # Map trace_id to plot label for markers
 
         # Limit lines storage
         self._limit_lines: Dict[str, Dict] = {}  # {line_id: {type, value, label, color, style, item}}
         self._next_limit_id = 1
+
+        # Marker controller (initially None, created when first needed)
+        self._marker_controller: Optional[MarkerController] = None
+        self._markers_visible = False
+        self._add_marker_mode = False  # Click-to-add marker mode
 
         # Setup UI
         self._setup_ui()
@@ -98,6 +105,60 @@ class ChartView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        # Create toolbar for marker controls
+        self._toolbar = QWidget()
+        toolbar_layout = QHBoxLayout(self._toolbar)
+        toolbar_layout.setContentsMargins(4, 4, 4, 4)
+        toolbar_layout.setSpacing(6)
+
+        # Marker controls
+        toolbar_label = QLabel("Markers:")
+        toolbar_label.setStyleSheet("font-weight: bold;")
+        toolbar_layout.addWidget(toolbar_label)
+
+        self._show_markers_btn = QPushButton("Marker Mode")
+        self._show_markers_btn.setCheckable(True)
+        self._show_markers_btn.setToolTip("Enter marker mode: click traces to add markers")
+        self._show_markers_btn.clicked.connect(self._toggle_markers)
+        toolbar_layout.addWidget(self._show_markers_btn)
+
+        # Clear All button
+        self._clear_markers_btn = QPushButton("Clear All")
+        self._clear_markers_btn.setToolTip("Remove all markers")
+        self._clear_markers_btn.setEnabled(False)  # Disabled until markers exist
+        self._clear_markers_btn.clicked.connect(self._clear_all_markers)
+        toolbar_layout.addWidget(self._clear_markers_btn)
+
+        # Vertical Marker checkbox
+        self._vertical_marker_checkbox = QCheckBox("Vertical Marker")
+        self._vertical_marker_checkbox.setChecked(False)  # Default to triangle (uncoupled)
+        self._vertical_marker_checkbox.setToolTip(
+            "Checked: Vertical line with all traces\n"
+            "Unchecked: Triangle marker with single trace"
+        )
+        self._vertical_marker_checkbox.setEnabled(False)  # Disabled until marker mode
+        self._vertical_marker_checkbox.stateChanged.connect(self._on_vertical_marker_changed)
+        toolbar_layout.addWidget(self._vertical_marker_checkbox)
+
+        # Show Info Overlay checkbox
+        self._show_overlay_checkbox = QCheckBox("Show Info Overlay")
+        self._show_overlay_checkbox.setChecked(True)  # Default to shown
+        self._show_overlay_checkbox.setToolTip("Show marker information on chart")
+        self._show_overlay_checkbox.setEnabled(False)  # Disabled until marker mode
+        self._show_overlay_checkbox.stateChanged.connect(self._on_show_overlay_changed)
+        toolbar_layout.addWidget(self._show_overlay_checkbox)
+
+        # Show Table checkbox
+        self._show_table_checkbox = QCheckBox("Show Table")
+        self._show_table_checkbox.setChecked(False)  # Default to hidden
+        self._show_table_checkbox.setToolTip("Show marker table")
+        self._show_table_checkbox.setEnabled(False)  # Disabled until marker mode
+        self._show_table_checkbox.stateChanged.connect(self._on_show_table_changed)
+        toolbar_layout.addWidget(self._show_table_checkbox)
+
+        toolbar_layout.addStretch()
+        layout.addWidget(self._toolbar)
 
         # Create plot widget
         self._plot_widget = pg.PlotWidget()
@@ -132,12 +193,12 @@ class ChartView(QWidget):
         # Enable mouse interaction
         self._plot_widget.setMouseEnabled(x=True, y=True)
 
-        # Add crosshair cursor
-        crosshair_pen = pg.mkPen('#888', width=1, style=pg.QtCore.Qt.PenStyle.DashLine)
-        self._crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=crosshair_pen)
-        self._crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=crosshair_pen)
-        self._plot_item.addItem(self._crosshair_v, ignoreBounds=True)
-        self._plot_item.addItem(self._crosshair_h, ignoreBounds=True)
+        # # Add crosshair cursor
+        # crosshair_pen = pg.mkPen('#888', width=1, style=pg.QtCore.Qt.PenStyle.DashLine)
+        # self._crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=crosshair_pen)
+        # self._crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=crosshair_pen)
+        # self._plot_item.addItem(self._crosshair_v, ignoreBounds=True)
+        # self._plot_item.addItem(self._crosshair_h, ignoreBounds=True)
 
         # Connect mouse move events
         self._plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
@@ -306,7 +367,7 @@ class ChartView(QWidget):
         """Handle context menu events."""
         self._context_menu.exec(event.globalPos())
 
-    def _show_trace_selection_dialog(self) -> None:
+    def _show_trace_selection_dialog(self, selected_trace_id: str | None = None) -> None:
         """Show combined trace selection and properties dialog."""
         if not self._traces:
             QMessageBox.information(self, "No Traces", "No traces are currently displayed in this chart.")
@@ -341,6 +402,12 @@ class ChartView(QWidget):
                 # No dataset (e.g., linear phase error traces) - use trace label
                 trace_name = trace.label if trace.label else trace_id
                 trace_combo.addItem(trace_name, trace_id)
+
+        # Set current selection to selected_trace_id if provided
+        if selected_trace_id is not None:
+            index = trace_combo.findData(selected_trace_id)
+            if index != -1:
+                trace_combo.setCurrentIndex(index)
 
         trace_layout.addWidget(trace_label)
         trace_layout.addWidget(trace_combo)
@@ -637,9 +704,9 @@ class ChartView(QWidget):
             mouse_point = self._plot_item.getViewBox().mapSceneToView(pos)
             x, y = mouse_point.x(), mouse_point.y()
 
-            # Update crosshairs
-            self._crosshair_v.setPos(x)
-            self._crosshair_h.setPos(y)
+            # # Update crosshairs
+            # self._crosshair_v.setPos(x)
+            # self._crosshair_h.setPos(y)
 
             # Format x value with appropriate units
             # PyQtGraph automatically scales Hz to kHz, MHz, GHz with SI prefixes
@@ -652,8 +719,8 @@ class ChartView(QWidget):
             self._cursor_label.setText(f"X: {x_formatted} | Y: {y_formatted}")
         else:
             # Hide crosshairs when outside plot area
-            self._crosshair_v.setPos(float('inf'))
-            self._crosshair_h.setPos(float('inf'))
+            # self._crosshair_v.setPos(float('inf'))
+            # self._crosshair_h.setPos(float('inf'))
             self._cursor_label.setText("Ready")
 
     def _format_frequency_value(self, freq: float) -> str:
@@ -681,6 +748,10 @@ class ChartView(QWidget):
 
     def _on_view_changed(self) -> None:
         """Handle view change events."""
+        # Update marker positions after zoom/pan
+        if self._marker_controller is not None:
+            self._marker_controller.update_view()
+
         self.view_changed.emit()
 
     def set_plot_type(self, plot_type: PlotType) -> None:
@@ -715,6 +786,11 @@ class ChartView(QWidget):
         # Update tab title to reflect new plot type
         self._update_tab_title()
 
+        # Update marker controller plot type if it exists
+        if self._marker_controller is not None:
+            plot_type_name = self._get_plot_type_name()
+            self._marker_controller.set_plot_type(plot_type_name)
+
         # Refresh all traces
         self._refresh_all_traces()
 
@@ -734,6 +810,9 @@ class ChartView(QWidget):
         plot_data = self._generate_plot_data(trace, dataset)
 
         if plot_data is not None:
+            # Store mapping for marker trace identification
+            self._trace_id_to_label[trace_id] = plot_data.label
+
             # Create PyQtGraph plot item
             pen = pg.mkPen(
                 color=trace.style.color,
@@ -755,14 +834,30 @@ class ChartView(QWidget):
             # Set visibility
             plot_item.setVisible(trace.style.visible)
 
-            # Connect double-click signal for trace properties
-            plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
+            # Make plot item clickable for trace properties
+            plot_item.curve.setClickable(True, width=10)
+
+            # Connect click signal for trace properties and marker placement
+            plot_item.sigClicked.connect(
+                lambda plot, event, tid=trace_id, pi=plot_item:
+                self._on_trace_clicked(tid, pi, event)
+            )
 
             # Store reference
             self._plot_items[trace_id] = plot_item
 
             # Apply legend styling if available
             self._apply_legend_styling()
+
+            # Update marker controller with actual plotted data
+            if self._marker_controller is not None:
+                # Pass the actual X,Y data being plotted (e.g., freq vs dB magnitude)
+                self._marker_controller.add_trace_data(
+                    trace_id=plot_data.label,  # Use label as trace ID for display
+                    frequency=plot_data.x,     # X-axis data (frequency)
+                    x_data=plot_data.x,        # For complex calculations (frequency)
+                    y_data=plot_data.y         # Y-axis data (whatever is being plotted)
+                )
 
     def remove_trace(self, trace_id: str) -> None:
         """
@@ -776,7 +871,12 @@ class ChartView(QWidget):
             del self._plot_items[trace_id]
 
         if trace_id in self._traces:
+            trace_label = self._traces[trace_id].get_display_label()
             del self._traces[trace_id]
+
+            # Remove from marker controller
+            if self._marker_controller is not None:
+                self._marker_controller.remove_trace_data(trace_label)
 
         if trace_id in self._datasets:
             del self._datasets[trace_id]
@@ -1237,7 +1337,7 @@ class ChartView(QWidget):
             )
 
         # Create a Trace object for the linear phase error plot
-        trace_label = f"{config.get('dataset_name', 'Unknown')}: {config.get('sparam', 'S11')} Linear Phase Error"
+        trace_label = f"{config.get('dataset_name', 'Unknown')}: {config.get('sparam', 'S11')}"
 
         trace = Trace(
             id=trace_id,
@@ -1251,6 +1351,10 @@ class ChartView(QWidget):
 
         # Store trace
         self._traces[trace_id] = trace
+
+        # Store trace ID to label mapping for marker identification
+        self._trace_id_to_label[trace_id] = trace.label
+
         # Plot error with trace style
         pen_error = pg.mkPen(
             color=style.color,
@@ -1274,14 +1378,22 @@ class ChartView(QWidget):
 
         # Connect click signal for trace properties
         # Note: sigClicked signal passes event/item but we ignore it and use captured trace_id
-        plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
+        plot_item.sigClicked.connect(
+            lambda plot, event, tid=trace_id, pi=plot_item:
+            self._on_trace_clicked(tid, pi, event)
+        )
 
         # Store plot item reference
         self._plot_items[trace_id] = plot_item
 
-        # # Add zero reference line
-        # pen_zero = pg.mkPen(color='k', width=1, style=Qt.PenStyle.DashLine)
-        # self._plot_item.plot([freq[0], freq[-1]], [0, 0], pen=pen_zero, name='Zero Reference')
+        # Update marker controller with actual plotted data
+        if self._marker_controller is not None:
+            self._marker_controller.add_trace_data(
+                trace_id=trace.label,  # Use trace label for display
+                frequency=freq,        # X-axis data (frequency)
+                x_data=freq,          # For calculations (frequency)
+                y_data=error          # Y-axis data (phase error values)
+            )
 
         # Set axis labels
         self._y_axis_label = 'Phase Error (°)'
@@ -1393,6 +1505,9 @@ class ChartView(QWidget):
             # Store trace
             self._traces[trace_id] = trace
 
+            # Store trace ID to label mapping for marker identification
+            self._trace_id_to_label[trace_id] = trace.label
+
             # Plot with trace style
             pen = pg.mkPen(
                 color=style.color,
@@ -1415,10 +1530,22 @@ class ChartView(QWidget):
             plot_item.curve.setClickable(True, width=10)
 
             # Connect click signal
-            plot_item.sigClicked.connect(lambda *args, tid=trace_id: self._on_trace_clicked(tid, plot_item))
+            plot_item.sigClicked.connect(
+                lambda plot, event, tid=trace_id, pi=plot_item:
+                self._on_trace_clicked(tid, pi, event)
+            )
 
             # Store plot item reference
             self._plot_items[trace_id] = plot_item
+
+            # Update marker controller with actual plotted data
+            if self._marker_controller is not None:
+                self._marker_controller.add_trace_data(
+                    trace_id=trace.label,    # Use trace label for display
+                    frequency=frequency,     # X-axis data (frequency)
+                    x_data=frequency,       # For calculations (frequency)
+                    y_data=phase_diff       # Y-axis data (phase difference values)
+                )
 
         # Set axis labels
         self._y_axis_label = 'Phase Difference (°)'
@@ -2526,9 +2653,26 @@ class ChartView(QWidget):
 
         return points_id
 
-    def _on_trace_clicked(self, trace_id: str, plot_item) -> None:
-        """Handle trace click for selection and properties."""
-        self._show_trace_selection_dialog()
+    def _on_trace_clicked(self, trace_id: str, plot_item, event=None) -> None:
+        """Handle trace click for selection and properties or marker placement."""
+        if self._add_marker_mode:
+            # Add marker mode: place marker at clicked point
+            if event is not None:
+                # Get the mouse position in scene coordinates
+                pos = event.scenePos()
+                # Map to data coordinates
+                mouse_point = self._plot_item.vb.mapSceneToView(pos)
+                freq = mouse_point.x()
+
+                # Get the trace label for marker identification
+                trace_label = self._trace_id_to_label.get(trace_id, None)
+
+                # Add marker at clicked frequency
+                if self._marker_controller is not None:
+                    self._marker_controller.add_marker_at_frequency(freq, target_trace=trace_label)
+        else:
+            # Normal mode: show trace selection dialog
+            self._show_trace_selection_dialog(selected_trace_id=trace_id)
 
     def _update_trace_style(self, trace_id: str) -> None:
         """Update the visual style of a trace."""
@@ -3242,3 +3386,168 @@ class ChartView(QWidget):
 
         # Fallback to basic title
         self._plot_item.setTitle(title)
+
+    # ========== Marker Control Methods ==========
+
+    def _toggle_markers(self) -> None:
+        """Toggle marker mode - show panel and enable click-to-add."""
+        if self._markers_visible:
+            # Exit marker mode
+            self._hide_markers()
+        else:
+            # Enter marker mode
+            self._show_markers()
+
+    def _show_markers(self) -> None:
+        """Show the marker panel and enter click-to-add mode."""
+        if self._marker_controller is None:
+            # Create marker controller
+            self._marker_controller = MarkerController(self)
+
+            # Set chart and dataset
+            self._marker_controller.set_chart(self._plot_item, chart_type="cartesian")
+
+            # Set plot type for value display
+            plot_type_name = self._get_plot_type_name()
+            self._marker_controller.set_plot_type(plot_type_name)
+
+            # # Set dataset if we have traces
+            # if self._datasets:
+            #     first_dataset = next(iter(self._datasets.values()))
+            #     self._marker_controller.set_dataset(first_dataset)
+
+            # Populate marker controller with existing trace data
+            for trace_id, trace in self._traces.items():
+                if trace_id in self._datasets:
+                    # Regular traces with datasets
+                    dataset = self._datasets[trace_id]
+                    plot_data = self._generate_plot_data(trace, dataset)
+                    if plot_data is not None:
+                        self._marker_controller.add_trace_data(
+                            trace_id=plot_data.label,
+                            frequency=plot_data.x,
+                            x_data=plot_data.x,
+                            y_data=plot_data.y
+                        )
+                elif trace.metric in ["linear_phase_error", "phase_difference"]:
+                    # Special plots (linear phase error, phase difference)
+                    # These plots already added their data during creation if marker controller existed
+                    # If it didn't exist, we need to get the data from the plot item
+                    if trace_id in self._plot_items:
+                        plot_item = self._plot_items[trace_id]
+                        # Get the actual plotted data from the plot item
+                        x_data = plot_item.xData
+                        y_data = plot_item.yData
+                        if x_data is not None and y_data is not None:
+                            self._marker_controller.add_trace_data(
+                                trace_id=trace.label,
+                                frequency=x_data,
+                                x_data=x_data,
+                                y_data=y_data
+                            )
+
+            # Add to layout (insert before plot widget)
+            main_layout = self.layout()
+            if main_layout:
+                # Insert after toolbar, before plot widget
+                main_layout.insertWidget(1, self._marker_controller)
+
+        self._marker_controller.show()
+        self._markers_visible = True
+        self._add_marker_mode = True  # Automatically enter add mode
+        self._show_markers_btn.setChecked(True)
+        self._show_markers_btn.setText("Exit Marker Mode")
+
+        # Enable toolbar controls
+        self._clear_markers_btn.setEnabled(True)
+        self._vertical_marker_checkbox.setEnabled(True)
+        self._show_overlay_checkbox.setEnabled(True)
+        self._show_table_checkbox.setEnabled(True)
+
+        # Sync checkbox states with marker controller
+        self._vertical_marker_checkbox.setChecked(self._marker_controller.coupled_mode)
+        self._show_overlay_checkbox.setChecked(self._marker_controller.show_overlay)
+        self._show_table_checkbox.setChecked(False)  # Table is hidden by default
+
+        # Change cursor to indicate add mode
+        self._plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+
+    def _hide_markers(self) -> None:
+        """Hide the marker panel and exit click-to-add mode."""
+        if self._marker_controller is not None:
+            self._marker_controller.hide()
+
+        self._markers_visible = False
+        self._add_marker_mode = False
+        self._show_markers_btn.setChecked(False)
+        self._show_markers_btn.setText("Marker Mode")
+
+        # Disable toolbar controls
+        self._clear_markers_btn.setEnabled(False)
+        self._vertical_marker_checkbox.setEnabled(False)
+        self._show_overlay_checkbox.setEnabled(False)
+        self._show_table_checkbox.setEnabled(False)
+
+        # Restore normal cursor
+        self._plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _clear_all_markers(self) -> None:
+        """Clear all markers."""
+        if self._marker_controller is not None:
+            self._marker_controller.clear_markers()
+            self._clear_markers_btn.setEnabled(False)
+
+    def _on_vertical_marker_changed(self, state: int) -> None:
+        """Handle vertical marker checkbox change."""
+        if self._marker_controller is not None:
+            is_vertical = (state == Qt.CheckState.Checked.value)
+            self._marker_controller.set_coupled_mode(is_vertical)
+
+    def _on_show_overlay_changed(self, state: int) -> None:
+        """Handle show overlay checkbox change."""
+        if self._marker_controller is not None:
+            show_overlay = (state == Qt.CheckState.Checked.value)
+            self._marker_controller.set_overlay_visibility(show_overlay)
+
+    def _on_show_table_changed(self, state: int) -> None:
+        """Handle show table checkbox change."""
+        if self._marker_controller is not None:
+            show_table = (state == Qt.CheckState.Checked.value)
+            self._marker_controller.set_table_visibility(show_table)
+
+    def _add_marker(self) -> None:
+        """Add a marker at the center frequency."""
+        if self._marker_controller is None:
+            self._show_markers()
+
+        if self._marker_controller is not None:
+            # Get center frequency from current view
+            view_box = self._plot_item.getViewBox()
+            view_range = view_box.viewRange()
+            x_range = view_range[0]
+            center_freq = (x_range[0] + x_range[1]) / 2
+
+            # Add marker at center frequency
+            self._marker_controller.add_marker_at_frequency(center_freq)
+
+    def get_marker_controller(self) -> Optional[MarkerController]:
+        """Get the marker controller instance."""
+        return self._marker_controller
+
+    # def set_marker_dataset(self, dataset: Dataset) -> None:
+    #     """Set the dataset for marker measurements."""
+    #     if self._marker_controller is not None:
+    #         self._marker_controller.set_dataset(dataset)
+
+    def _toggle_add_marker_mode(self) -> None:
+        """Toggle click-to-add marker mode."""
+        self._add_marker_mode = self._add_marker_mode_btn.isChecked()
+
+        if self._add_marker_mode:
+            # Change cursor to indicate add mode
+            self._plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+            self._add_marker_mode_btn.setText("Adding...")
+        else:
+            # Restore default cursor
+            self._plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
+            self._add_marker_mode_btn.setText("Click to Add")
