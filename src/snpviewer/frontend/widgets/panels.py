@@ -696,8 +696,7 @@ class ChartsAreaPanel(QWidget):
         # Connect to tab title changes if the widget supports it
         if hasattr(widget, 'tab_title_changed'):
             widget.tab_title_changed.connect(
-                lambda new_title, new_title_no_type, cid=chart_id: self._update_tab_title(
-                    cid, new_title, new_title_no_type)
+                lambda new_title, cid=chart_id: self._update_tab_title(cid, new_title)
             )
             # widget.tab_title_changed.connect(
             #     lambda _, new_title, cid=chart_id: self._update_chart_tab_title(cid, new_title)
