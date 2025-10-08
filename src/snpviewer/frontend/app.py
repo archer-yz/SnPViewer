@@ -682,6 +682,20 @@ class SnPViewerMainWindow(QMainWindow):
                     # Update phase unwrap setting
                     if hasattr(chart_widget, 'get_phase_unwrap'):
                         chart.phase_unwrap = chart_widget.get_phase_unwrap()
+
+                    # Update marker state
+                    if hasattr(chart_widget, 'get_marker_controller'):
+                        marker_controller = chart_widget.get_marker_controller()
+                        if marker_controller:
+                            # Export markers to dict
+                            chart.markers = marker_controller.export_markers_to_dict()
+                            # Save marker mode state
+                            chart.marker_mode_active = chart_widget.is_marker_mode_active()
+                            chart.marker_coupled_mode = marker_controller.coupled_mode
+                            chart.marker_show_overlay = marker_controller.show_overlay
+                            if hasattr(marker_controller, 'marker_table'):
+                                chart.marker_show_table = marker_controller.marker_table.isVisible()
+
                     # Update linear phase error data
                     if hasattr(chart_widget, 'get_linear_phase_error_config'):
                         chart.linear_phase_error_data = chart_widget.get_linear_phase_error_config()
@@ -1846,7 +1860,8 @@ class SnPViewerMainWindow(QMainWindow):
                             # Restore phase unwrap setting
                             if hasattr(chart, 'phase_unwrap') and hasattr(chart_widget, 'restore_phase_unwrap'):
                                 chart_widget.restore_phase_unwrap(chart.phase_unwrap)
-                            # Restore linear phase error data
+
+                            # Restore linear phase error data BEFORE markers
                             if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:
                                 if hasattr(chart_widget, 'restore_linear_phase_error_config'):
                                     # Get the dataset for linear phase error recalculation
@@ -1855,12 +1870,26 @@ class SnPViewerMainWindow(QMainWindow):
                                     chart_widget.restore_linear_phase_error_config(
                                         chart.linear_phase_error_data, lpe_dataset
                                     )
-                            # Restore phase difference data
+                            # Restore phase difference data BEFORE markers
                             if hasattr(chart, 'phase_difference_data') and chart.phase_difference_data:
                                 if hasattr(chart_widget, 'restore_phase_difference_config'):
                                     chart_widget.restore_phase_difference_config(
                                         chart.phase_difference_data, chart_datasets
                                     )
+
+                            # Restore markers AFTER special plots so trace data is available
+                            if hasattr(chart, 'markers') and chart.markers and hasattr(chart_widget, 'restore_markers'):
+                                marker_mode_active = getattr(chart, 'marker_mode_active', False)
+                                marker_coupled_mode = getattr(chart, 'marker_coupled_mode', False)
+                                marker_show_overlay = getattr(chart, 'marker_show_overlay', True)
+                                marker_show_table = getattr(chart, 'marker_show_table', False)
+                                chart_widget.restore_markers(
+                                    chart.markers,
+                                    marker_mode_active=marker_mode_active,
+                                    marker_coupled_mode=marker_coupled_mode,
+                                    marker_show_overlay=marker_show_overlay,
+                                    marker_show_table=marker_show_table
+                                )
                         except Exception as e:
                             print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
                             # Continue without styling restoration

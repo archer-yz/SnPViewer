@@ -126,6 +126,7 @@ class Chart:
     chart_type: str
     trace_ids: List[str] = field(default_factory=list)
     traces: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Serialized trace data {trace_id: trace_dict}
+    markers: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Serialized marker data {marker_id: marker_dict}
     limit_lines: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     axes: Optional[ChartAxes] = None
     linked_x_axis: bool = False
@@ -141,6 +142,10 @@ class Chart:
     phase_unwrap: bool = True  # Whether to unwrap phase for Phase charts
     linear_phase_error_data: Optional[Dict[str, Any]] = None  # Linear phase error analysis data
     phase_difference_data: Optional[Dict[str, Any]] = None  # Phase difference analysis data
+    marker_mode_active: bool = False  # Whether marker mode is currently active
+    marker_coupled_mode: bool = False  # Whether markers are in coupled (vertical) mode
+    marker_show_overlay: bool = True  # Whether marker info overlay is shown
+    marker_show_table: bool = False  # Whether marker table is shown
 
     def __post_init__(self) -> None:
         """Post-initialization to set default axes if not provided."""
@@ -342,6 +347,7 @@ class Chart:
             'chart_type': self.chart_type,
             'trace_ids': self.trace_ids,
             'traces': self.traces,
+            'markers': self.markers,
             'limit_lines': self.limit_lines,
             'axes': self.axes.to_dict() if self.axes else None,
             'linked_x_axis': self.linked_x_axis,
@@ -356,7 +362,11 @@ class Chart:
             'layout_options': self.layout_options,
             'phase_unwrap': self.phase_unwrap,
             'linear_phase_error_data': self.linear_phase_error_data,
-            'phase_difference_data': self.phase_difference_data
+            'phase_difference_data': self.phase_difference_data,
+            'marker_mode_active': self.marker_mode_active,
+            'marker_coupled_mode': self.marker_coupled_mode,
+            'marker_show_overlay': self.marker_show_overlay,
+            'marker_show_table': self.marker_show_table
         }
 
     @classmethod
@@ -381,6 +391,7 @@ class Chart:
             chart_type=data['chart_type'],
             trace_ids=data.get('trace_ids', []),
             traces=data.get('traces', {}),
+            markers=data.get('markers', {}),
             limit_lines=data.get('limit_lines', {}),
             axes=axes,
             linked_x_axis=data.get('linked_x_axis', False),
@@ -395,5 +406,9 @@ class Chart:
             layout_options=data.get('layout_options', {}),
             phase_unwrap=data.get('phase_unwrap', True),
             linear_phase_error_data=data.get('linear_phase_error_data'),
-            phase_difference_data=data.get('phase_difference_data')
+            phase_difference_data=data.get('phase_difference_data'),
+            marker_mode_active=data.get('marker_mode_active', False),
+            marker_coupled_mode=data.get('marker_coupled_mode', False),
+            marker_show_overlay=data.get('marker_show_overlay', True),
+            marker_show_table=data.get('marker_show_table', False)
         )

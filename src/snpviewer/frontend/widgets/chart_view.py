@@ -1973,6 +1973,87 @@ class ChartView(QWidget):
         self._phase_unwrap_action.setChecked(unwrap)
 
         # If currently in phase mode, refresh
+
+    def get_marker_controller(self) -> Optional[Any]:
+        """Get the marker controller if it exists."""
+        return self._marker_controller
+
+    def is_marker_mode_active(self) -> bool:
+        """Check if marker mode is currently active."""
+        return self._markers_visible
+
+    def restore_markers(self, markers_dict: Dict[str, Dict[str, Any]],
+                        marker_mode_active: bool = False,
+                        marker_coupled_mode: bool = False,
+                        marker_show_overlay: bool = True,
+                        marker_show_table: bool = False) -> None:
+        """
+        Restore markers from saved data.
+
+        Args:
+            markers_dict: Dictionary of marker data
+            marker_mode_active: Whether to activate marker mode
+            marker_coupled_mode: Whether markers are in coupled mode
+            marker_show_overlay: Whether to show marker overlay
+            marker_show_table: Whether to show marker table
+        """
+        if not markers_dict:
+            return
+
+        # Always need to create marker controller and populate trace data to restore markers
+        if not self._markers_visible:
+            self._show_markers()
+
+        # Set marker controller settings
+        if self._marker_controller:
+            # DON'T set coupled_mode globally - let each marker keep its own mode
+            # self._marker_controller.coupled_mode = marker_coupled_mode
+            self._marker_controller.show_overlay = marker_show_overlay
+
+            # Import markers (they will have their individual coupled settings)
+            self._marker_controller.import_markers_from_dict(markers_dict)
+
+            # Set table visibility
+            if hasattr(self._marker_controller, 'marker_table'):
+                self._marker_controller.marker_table.setVisible(marker_show_table)
+
+            # Determine if all markers are coupled to set checkbox state
+            # Check the actual marker states rather than using the saved marker_coupled_mode
+            all_coupled = all(m.get('coupled', False) for m in markers_dict.values())
+
+            # Update UI checkboxes to match restored state
+            if hasattr(self, '_vertical_marker_checkbox'):
+                # Only check the box if ALL markers are coupled
+                # If mixed or all uncoupled, leave it unchecked
+                self._vertical_marker_checkbox.setChecked(all_coupled)
+            if hasattr(self, '_show_overlay_checkbox'):
+                self._show_overlay_checkbox.setChecked(marker_show_overlay)
+            if hasattr(self, '_show_table_checkbox'):
+                self._show_table_checkbox.setChecked(marker_show_table)
+
+        # If marker mode wasn't active when saved, hide the marker UI but keep markers on plot
+        if not marker_mode_active and self._marker_controller:
+            # Hide the marker controller widget but keep markers visible on plot
+            self._marker_controller.hide()
+            self._markers_visible = False
+            self._add_marker_mode = False
+            self._show_markers_btn.setChecked(False)
+            self._show_markers_btn.setText("Marker Mode")
+
+            # Disable toolbar controls
+            if hasattr(self, '_clear_markers_btn'):
+                self._clear_markers_btn.setEnabled(False)
+            if hasattr(self, '_vertical_marker_checkbox'):
+                self._vertical_marker_checkbox.setEnabled(False)
+            if hasattr(self, '_show_overlay_checkbox'):
+                self._show_overlay_checkbox.setEnabled(False)
+            if hasattr(self, '_show_table_checkbox'):
+                self._show_table_checkbox.setEnabled(False)
+
+            # Restore normal cursor
+            self._plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
+
+        # If currently in phase mode, refresh
         if self._plot_type == PlotType.PHASE:
             self._refresh_all_traces()
 
@@ -3529,10 +3610,6 @@ class ChartView(QWidget):
 
             # Add marker at center frequency
             self._marker_controller.add_marker_at_frequency(center_freq)
-
-    def get_marker_controller(self) -> Optional[MarkerController]:
-        """Get the marker controller instance."""
-        return self._marker_controller
 
     # def set_marker_dataset(self, dataset: Dataset) -> None:
     #     """Set the dataset for marker measurements."""

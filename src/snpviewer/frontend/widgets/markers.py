@@ -1510,3 +1510,102 @@ class MarkerController(QWidget):
                 marker_id = marker_num_text
                 if marker_id in self.markers and isinstance(self.markers[marker_id], InteractiveMarker):
                     self.markers[marker_id].set_selected(True)
+
+    def export_markers_to_dict(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Export all markers to dictionary format for serialization.
+
+        Returns:
+            Dictionary mapping marker_id to marker data dict
+        """
+        markers_dict = {}
+
+        for marker_id, marker in self.markers.items():
+            if isinstance(marker, InteractiveMarker):
+                # Get current position and interpolated values
+                frequency = marker.get_position()
+                marker_data = marker.get_interpolated_values()
+
+                # Use target trace for uncoupled markers, or first trace for coupled
+                if marker.target_trace and marker.target_trace in marker_data:
+                    trace_id = marker.target_trace
+                    data = marker_data[trace_id]
+                elif marker_data:
+                    trace_id = list(marker_data.keys())[0]
+                    data = marker_data[trace_id]
+                else:
+                    continue  # Skip markers with no data
+
+                # Create marker dict
+                markers_dict[marker_id] = {
+                    'id': marker_id,
+                    'name': f"M{marker.marker_num}",
+                    'marker_num': marker.marker_num,
+                    'trace_id': trace_id,
+                    'target_trace': marker.target_trace,
+                    'frequency': frequency,
+                    'x_value': data.position_x,
+                    'y_value': data.position_y,
+                    'coupled': marker.coupled,
+                    'visible': marker.visible,
+                    'color': marker.color
+                }
+
+        return markers_dict
+
+    def import_markers_from_dict(self, markers_dict: Dict[str, Dict[str, Any]]) -> None:
+        """
+        Import markers from dictionary format (from loaded project).
+
+        Args:
+            markers_dict: Dictionary mapping marker_id to marker data dict
+        """
+        # Clear existing markers first
+        self.clear_markers()
+
+        # Sort by marker_num to maintain order
+        sorted_markers = sorted(markers_dict.values(), key=lambda m: m.get('marker_num', 0))
+
+        for marker_data in sorted_markers:
+            # Get the coupled state for this specific marker
+            coupled = marker_data.get('coupled', False)
+            target_trace = marker_data.get('target_trace')
+
+            # Temporarily set the controller's coupled_mode to match this marker
+            # so that add_marker creates the right type
+            original_coupled_mode = self.coupled_mode
+            self.coupled_mode = coupled
+
+            # Add marker
+            marker_id = self.add_marker(target_trace=target_trace if not coupled else None)
+
+            # Restore original coupled mode
+            self.coupled_mode = original_coupled_mode
+
+            if marker_id and marker_id in self.markers:
+                marker = self.markers[marker_id]
+
+                # Ensure the marker has the correct coupled state
+                marker.coupled = coupled
+
+                # Set position
+                frequency = marker_data.get('frequency')
+                if frequency is not None:
+                    marker.set_position(frequency)
+
+                # Set visibility
+                if not marker_data.get('visible', True):
+                    marker.set_visible(False)
+
+                # Update marker number to match saved value
+                saved_marker_num = marker_data.get('marker_num')
+                if saved_marker_num is not None:
+                    marker.marker_num = saved_marker_num
+
+        # Update next_marker_id based on highest marker_num
+        if sorted_markers:
+            max_marker_num = max(m.get('marker_num', 0) for m in sorted_markers)
+            self.next_marker_id = max_marker_num + 1
+
+        # Update table to reflect imported markers
+        self._update_table()
