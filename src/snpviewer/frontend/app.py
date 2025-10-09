@@ -201,6 +201,13 @@ class SnPViewerMainWindow(QMainWindow):
         self._create_chart_action.triggered.connect(self._create_new_chart)
         chart_menu.addAction(self._create_chart_action)
 
+        # Duplicate Chart action
+        self._duplicate_chart_action = QAction("&Duplicate Chart", self)
+        self._duplicate_chart_action.setShortcut(QKeySequence("Ctrl+D"))
+        self._duplicate_chart_action.setStatusTip("Duplicate the current chart with all settings")
+        self._duplicate_chart_action.triggered.connect(self._duplicate_current_chart)
+        chart_menu.addAction(self._duplicate_chart_action)
+
         # View Menu
         view_menu = menubar.addMenu("&View")
 
@@ -333,6 +340,7 @@ class SnPViewerMainWindow(QMainWindow):
         charts_area = self._main_panels.charts_area
         charts_area.chart_selected.connect(self._on_chart_selected)
         charts_area.chart_closed.connect(self._on_chart_closed)
+        charts_area.duplicate_chart_requested.connect(self._on_duplicate_chart_requested)
 
         # Project signals
         self.project_loaded.connect(self._on_project_loaded)
@@ -1373,6 +1381,27 @@ class SnPViewerMainWindow(QMainWindow):
         # Clean up chart resources
         self.statusBar().showMessage(f"Closed chart: {chart_id}")
 
+    def _on_duplicate_chart_requested(self, chart_id: str) -> None:
+        """
+        Handle duplicate chart request from context menu.
+
+        Args:
+            chart_id: ID of the chart to duplicate
+        """
+        # We need to temporarily set this as the current chart to duplicate it
+        # Find the tab index for this chart
+        for i in range(self._main_panels.charts_area._chart_tabs.count()):
+            if self._main_panels.charts_area._chart_tabs.tabBar().tabData(i) == chart_id:
+                # Set as current
+                self._main_panels.charts_area._chart_tabs.setCurrentIndex(i)
+
+                # Duplicate it
+                self._duplicate_current_chart()
+
+                # Note: We don't restore the old index because the user probably wants
+                # to see the newly duplicated chart
+                break
+
     def _on_dataset_removed(self, user_friendly_name: str, dataset_uuid: str) -> None:
         """Handle dataset removal - clean up related traces and charts."""
         # Remove traces from this dataset across all charts using UUID
@@ -1567,6 +1596,292 @@ class SnPViewerMainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Created {chart_type} chart with {trace_count} trace(s) from {dataset_count} dataset(s)"
         )
+
+    def _duplicate_current_chart(self) -> None:
+        """
+        Duplicate the currently active chart with all its settings.
+
+        Creates a copy of the current chart including:
+        - All traces and their styling
+        - All markers
+        - Chart styling (fonts, colors, plot area settings)
+        - Legend configuration (columns, position)
+        - Axis ranges
+        - Limit lines
+        - Marker overlay position
+        """
+        # Get the current chart
+        current_chart_id = self._main_panels.charts_area.get_current_chart_id()
+        if not current_chart_id:
+            QMessageBox.information(
+                self,
+                "No Chart Selected",
+                "Please select a chart to duplicate."
+            )
+            return
+
+        # Get the chart widget and model
+        current_widget = self._main_panels.charts_area.get_chart_widget(current_chart_id)
+        if not current_widget:
+            QMessageBox.warning(
+                self,
+                "Chart Not Found",
+                "Could not find the selected chart."
+            )
+            return
+
+        # Get the chart model from charts area
+        all_charts_data = self._main_panels.charts_area.get_all_charts()
+        if current_chart_id not in all_charts_data:
+            QMessageBox.warning(
+                self,
+                "Chart Data Not Found",
+                "Could not find the chart data."
+            )
+            return
+
+        current_chart = all_charts_data[current_chart_id]['chart']
+
+        # Generate new IDs and title
+        new_chart_id = str(uuid.uuid4())[:8]
+        chart_number = self._main_panels.charts_area.get_next_chart_number()
+        new_tab_title = f"Chart{chart_number}"
+
+        # Determine chart type from the current chart
+        chart_type = current_chart.chart_type
+
+        # Create new chart widget of the same type
+        if chart_type in ['SmithZ', 'SmithY']:
+            new_widget = SmithView()
+        else:
+            new_widget = ChartView()
+
+            # Connect signals
+            new_widget.add_traces_requested.connect(
+                lambda: self._on_add_traces_requested(new_widget, chart_type)
+            )
+            new_widget.properties_changed.connect(
+                lambda: self._set_modified(True)
+            )
+            new_widget.create_new_chart_requested.connect(
+                self._on_create_linear_phase_error_chart
+            )
+
+            # Set plot type - use case-insensitive comparison to match all variations
+            chart_type_lower = chart_type.lower()
+            if chart_type_lower == "magnitude":
+                new_widget.set_plot_type(PlotType.MAGNITUDE)
+            elif chart_type_lower == "phase":
+                new_widget.set_plot_type(PlotType.PHASE)
+            elif chart_type_lower in ["group_delay", "groupdelay"]:
+                new_widget.set_plot_type(PlotType.GROUP_DELAY)
+            elif chart_type_lower in ["linearphaseerror", "linear_phase_error"]:
+                new_widget.set_plot_type(PlotType.LINEAR_PHASE_ERROR)
+            elif chart_type_lower in ["phasedifference", "phase_difference"]:
+                new_widget.set_plot_type(PlotType.PHASE_DIFFERENCE)
+
+            # Set phase unwrap setting
+            if hasattr(current_widget, 'get_phase_unwrap') and hasattr(new_widget, 'restore_phase_unwrap'):
+                new_widget.restore_phase_unwrap(current_widget.get_phase_unwrap())
+
+        # Copy chart titles
+        if hasattr(current_widget, 'get_chart_title'):
+            chart_title = current_widget.get_chart_title()
+            if hasattr(new_widget, 'set_chart_title'):
+                new_widget.set_chart_title(chart_title + " (Copy)")
+
+        # Set the tab title
+        if hasattr(new_widget, 'set_chart_tab_title'):
+            new_widget.set_chart_tab_title(new_tab_title)
+
+        # Copy axis configuration
+        import copy
+        axes_copy = copy.deepcopy(current_chart.axes) if current_chart.axes else None
+
+        # Create the new chart model
+        new_chart = Chart(
+            id=new_chart_id,
+            tab_title=new_tab_title,
+            title=current_chart.title + " (Copy)",
+            chart_type=chart_type,
+            trace_ids=[],  # Will be populated as we add traces
+            axes=axes_copy,
+            linked_x_axis=current_chart.linked_x_axis,
+            legend_enabled=current_chart.legend_enabled,
+            legend_position=current_chart.legend_position,
+            legend_columns=current_chart.legend_columns,
+            legend_offset_x=current_chart.legend_offset_x,
+            legend_offset_y=current_chart.legend_offset_y,
+            background_color=current_chart.background_color,
+            chart_fonts=copy.deepcopy(current_chart.chart_fonts),
+            chart_colors=copy.deepcopy(current_chart.chart_colors),
+            plot_area_settings=copy.deepcopy(current_chart.plot_area_settings),
+            phase_unwrap=current_chart.phase_unwrap,
+            marker_mode_active=False,  # Don't copy marker mode state
+            marker_coupled_mode=current_chart.marker_coupled_mode,
+            marker_show_overlay=current_chart.marker_show_overlay,
+            marker_show_table=current_chart.marker_show_table,
+            marker_overlay_offset_x=current_chart.marker_overlay_offset_x,
+            marker_overlay_offset_y=current_chart.marker_overlay_offset_y,
+        )
+
+        # Add the new chart to the charts area
+        self._main_panels.charts_area.add_chart(new_chart_id, new_chart, new_widget)
+
+        # Copy chart styling (fonts, colors, plot area settings)
+        if hasattr(current_widget, 'get_chart_fonts') and hasattr(new_widget, 'restore_chart_fonts'):
+            chart_fonts = current_widget.get_chart_fonts()
+            if chart_fonts:
+                new_widget.restore_chart_fonts(chart_fonts)
+
+        if hasattr(current_widget, 'get_chart_colors') and hasattr(new_widget, 'restore_chart_colors'):
+            chart_colors = current_widget.get_chart_colors()
+            if chart_colors:
+                new_widget.restore_chart_colors(chart_colors)
+
+        if hasattr(current_widget, 'get_plot_area_settings') and hasattr(new_widget, 'restore_plot_area_settings'):
+            plot_area_settings = current_widget.get_plot_area_settings()
+            if plot_area_settings:
+                new_widget.restore_plot_area_settings(plot_area_settings)
+
+        # Copy legend configuration
+        if hasattr(current_widget, 'get_legend_columns') and hasattr(new_widget, 'set_legend_columns'):
+            legend_columns = current_widget.get_legend_columns()
+            new_widget.set_legend_columns(legend_columns)
+
+        # Copy limit lines
+        if hasattr(current_widget, 'get_limit_lines'):
+            limit_lines = current_widget.get_limit_lines()
+            if limit_lines and hasattr(new_widget, 'restore_limit_lines'):
+                new_widget.restore_limit_lines(limit_lines)
+
+        # Handle special chart types that use custom data structures
+        chart_type_lower = chart_type.lower()
+        is_special_chart = chart_type_lower in [
+            "linearphaseerror", "linear_phase_error", "phasedifference", "phase_difference"
+        ]
+
+        if is_special_chart:
+            # For Linear Phase Error charts
+            if chart_type_lower in ["linearphaseerror", "linear_phase_error"]:
+                if current_chart.linear_phase_error_data and hasattr(new_widget, 'restore_linear_phase_error_config'):
+                    datasets = self._main_panels.dataset_browser._datasets
+                    lpe_dataset_id = current_chart.linear_phase_error_data.get('dataset_id')
+                    lpe_dataset = datasets.get(lpe_dataset_id) if lpe_dataset_id else None
+                    if lpe_dataset:
+                        new_widget.restore_linear_phase_error_config(
+                            current_chart.linear_phase_error_data, lpe_dataset
+                        )
+
+            # For Phase Difference charts
+            elif chart_type_lower in ["phasedifference", "phase_difference"]:
+                if current_chart.phase_difference_data and hasattr(new_widget, 'restore_phase_difference_config'):
+                    datasets = self._main_panels.dataset_browser._datasets
+                    # Collect all required datasets
+                    chart_datasets = {}
+                    ref_dataset_id = current_chart.phase_difference_data.get('reference_dataset_id')
+                    if ref_dataset_id and ref_dataset_id in datasets:
+                        chart_datasets[ref_dataset_id] = datasets[ref_dataset_id]
+                    comparison_ids = current_chart.phase_difference_data.get('comparison_datasets', [])
+                    for comp_id in comparison_ids:
+                        if comp_id in datasets:
+                            chart_datasets[comp_id] = datasets[comp_id]
+
+                    if chart_datasets:
+                        new_widget.restore_phase_difference_config(
+                            current_chart.phase_difference_data, chart_datasets
+                        )
+        else:
+            # Copy all traces with their styling for normal chart types
+            # Get traces directly from the widget (more reliable than model)
+            if hasattr(current_widget, 'get_existing_traces'):
+                existing_traces = current_widget.get_existing_traces()
+
+                for trace_id, (dataset_id, trace, dataset) in existing_traces.items():
+                    # Generate new trace ID for the duplicate
+                    new_trace_id = str(uuid.uuid4())[:8]
+
+                    # Create a copy of the trace with new ID
+                    new_trace = Trace(
+                        id=new_trace_id,
+                        dataset_id=trace.dataset_id,
+                        domain=trace.domain,
+                        port_path=trace.port_path,
+                        metric=trace.metric,
+                        label=trace.label,
+                        style=copy.deepcopy(trace.style)
+                    )
+
+                    # Add to chart model
+                    new_chart.trace_ids.append(new_trace_id)
+                    new_chart.traces[new_trace_id] = new_trace.to_dict()
+
+                    # Add to widget
+                    if chart_type in ['SmithZ', 'SmithY']:
+                        if hasattr(new_widget, 'add_trace'):
+                            new_widget.add_trace(new_trace, new_trace.style)
+                    else:
+                        if hasattr(new_widget, 'add_trace'):
+                            new_widget.add_trace(new_trace_id, new_trace, dataset)
+
+        # Copy axis ranges if they were manually set
+        if axes_copy and hasattr(new_widget, 'set_axis_range'):
+            x_axis = axes_copy.x
+            y_axis = axes_copy.y
+
+            if not x_axis.auto_range and x_axis.min_value is not None and x_axis.max_value is not None:
+                new_widget.set_axis_range('x', x_axis.min_value, x_axis.max_value)
+
+            if not y_axis.auto_range and y_axis.min_value is not None and y_axis.max_value is not None:
+                new_widget.set_axis_range('y', y_axis.min_value, y_axis.max_value)
+
+        # Copy markers and marker settings
+        if current_chart.markers and hasattr(new_widget, 'restore_markers'):
+            # Prepare marker overlay offset tuple if available
+            marker_overlay_offset = None
+            if current_chart.marker_overlay_offset_x is not None and current_chart.marker_overlay_offset_y is not None:
+                marker_overlay_offset = (current_chart.marker_overlay_offset_x, current_chart.marker_overlay_offset_y)
+
+            # Restore markers with all settings
+            new_widget.restore_markers(
+                markers_dict=current_chart.markers,
+                marker_mode_active=False,  # Don't activate marker mode automatically
+                marker_coupled_mode=current_chart.marker_coupled_mode,
+                marker_show_overlay=current_chart.marker_show_overlay,
+                marker_show_table=current_chart.marker_show_table,
+                marker_overlay_offset=marker_overlay_offset
+            )
+
+        # Update project if we have one
+        if self._current_project:
+            self._current_project.add_chart(new_chart)
+            self._set_modified(True)
+
+        # Show success message
+        # For special chart types, we may not have trace_ids but we have data
+        marker_count = len(current_chart.markers) if current_chart.markers else 0
+
+        if is_special_chart:
+            # Special charts don't use regular trace counting
+            if marker_count > 0:
+                self.statusBar().showMessage(
+                    f"Duplicated {chart_type} chart with {marker_count} marker(s)"
+                )
+            else:
+                self.statusBar().showMessage(
+                    f"Duplicated {chart_type} chart"
+                )
+        else:
+            # Regular charts
+            trace_count = len(new_chart.trace_ids)
+            if marker_count > 0:
+                self.statusBar().showMessage(
+                    f"Duplicated chart with {trace_count} trace(s) and {marker_count} marker(s)"
+                )
+            else:
+                self.statusBar().showMessage(
+                    f"Duplicated chart with {trace_count} trace(s)"
+                )
 
     def _on_add_parameter_to_chart_requested(self, chart_id: str, dataset_id: str, param_name: str) -> None:
         """

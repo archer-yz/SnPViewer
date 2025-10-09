@@ -581,6 +581,7 @@ class ChartsAreaPanel(QWidget):
 
     chart_selected = Signal(str)  # chart_id
     chart_closed = Signal(str)  # chart_id
+    duplicate_chart_requested = Signal(str)  # chart_id to duplicate
 
     def __init__(self, parent: Optional[QWidget] = None):
         """Initialize the charts area panel."""
@@ -603,6 +604,10 @@ class ChartsAreaPanel(QWidget):
         self._chart_tabs.setTabsClosable(True)
         self._chart_tabs.setMovable(True)
         self._chart_tabs.setDocumentMode(True)
+
+        # Enable context menu on tab bar
+        self._chart_tabs.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._chart_tabs.tabBar().customContextMenuRequested.connect(self._show_tab_context_menu)
 
         # Add placeholder tab
         self._add_placeholder_tab()
@@ -651,6 +656,39 @@ class ChartsAreaPanel(QWidget):
 
         # Disable close button for placeholder
         self._chart_tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
+
+    def _show_tab_context_menu(self, position) -> None:
+        """Show context menu for chart tabs."""
+        from PySide6.QtWidgets import QMenu
+
+        # Get the tab index at the position
+        tab_index = self._chart_tabs.tabBar().tabAt(position)
+        if tab_index < 0:
+            return
+
+        # Get chart ID from tab data
+        chart_id = self._chart_tabs.tabBar().tabData(tab_index)
+        if not chart_id:  # Skip placeholder or invalid tabs
+            return
+
+        # Create context menu
+        menu = QMenu(self)
+
+        duplicate_action = menu.addAction("Duplicate Chart")
+        duplicate_action.setShortcut("Ctrl+D")
+
+        menu.addSeparator()
+
+        close_action = menu.addAction("Close Chart")
+        close_action.setShortcut("Ctrl+W")
+
+        # Show menu and handle action
+        action = menu.exec(self._chart_tabs.tabBar().mapToGlobal(position))
+
+        if action == duplicate_action:
+            self.duplicate_chart_requested.emit(chart_id)
+        elif action == close_action:
+            self._on_tab_close_requested(tab_index)
 
     def get_next_chart_number(self) -> int:
         """Get the next chart number for naming purposes."""
