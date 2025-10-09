@@ -941,6 +941,9 @@ class ChartView(QWidget):
         # Update the dataset file_name for all traces from this dataset
         for trace_id, dataset in self._datasets.items():
             if dataset.id == dataset_id:
+                # Save the old label before updating
+                old_label = self._trace_id_to_label.get(trace_id, None)
+
                 # Update the dataset's display_name
                 dataset.display_name = new_name
 
@@ -953,14 +956,36 @@ class ChartView(QWidget):
                     plot_data = self._generate_plot_data(trace, dataset)
 
                     if plot_data:
-                        # Remove the old legend entry
+                        # Find this item in the legend and update its label
                         try:
-                            self._legend.removeItem(plot_item)
-                        except Exception:
-                            pass  # Item might not be in legend
+                            if hasattr(self._legend, 'items'):
+                                for idx, (sample, label) in enumerate(self._legend.items):
+                                    # The sample is an ItemSample, we need to get the actual plot item from it
+                                    actual_item = None
+                                    if hasattr(sample, 'item'):
+                                        actual_item = sample.item
 
-                        # Add the updated legend entry with new label
-                        self._legend.addItem(plot_item, plot_data.label)
+                                    if actual_item == plot_item or actual_item is plot_item:
+                                        # Found the matching item - update its label text
+                                        label.setText(plot_data.label)
+                                        label.updateGeometry()
+
+                                        # Force legend to update its layout
+                                        if hasattr(self._legend, 'updateSize'):
+                                            self._legend.updateSize()
+
+                                        break
+
+                        except Exception as e:
+                            print(f"Warning: Could not update legend label: {e}")
+
+                        # Update the trace ID to label mapping for markers
+                        self._trace_id_to_label[trace_id] = plot_data.label
+
+                        # Update marker controller with new label
+                        if self._marker_controller is not None and old_label:
+                            # Rename the trace label in markers, preserving order and data
+                            self._marker_controller.rename_trace_label(old_label, plot_data.label)
 
                         updated = True
 
@@ -3149,42 +3174,13 @@ class ChartView(QWidget):
         # Remove existing legend if present
         if self._legend is not None:
             try:
-                # Clear all items from the legend first
-                # if hasattr(self._legend, 'clear'):
-                #     self._legend.clear()
                 # Remove the legend from the plot
                 self._plot_item.removeItem(self._legend)
             except Exception as e:
                 print(f"Warning: Failed to remove legend: {e}")
-
-            # self._legend = None
-
         # Add new legend (PyQtGraph places it in upper right by default)
         # The legend is draggable, so users can move it wherever they want
-        try:
-            self._legend = self._plot_item.addLegend()
-        except Exception as e:
-            print(f"Warning: Failed to add legend: {e}")
-            # Try to get existing legend if addLegend failed
-            if hasattr(self._plot_item, 'legend'):
-                self._legend = self._plot_item.legend
-
-        # # Ensure we have a legend
-        # if self._legend is None:
-        #     print("Error: Legend is None after creation")
-        #     return
-
-        # # Manually add all existing plot items to the legend
-        # # This is necessary when recreating the legend after plots already exist
-        # for trace_id, plot_item in self._plot_items.items():
-        #     try:
-        #         # Get the label for this trace
-        #         label = self._trace_id_to_label.get(trace_id, trace_id)
-        #         # Add to legend if it has a visible plot item
-        #         if plot_item and hasattr(plot_item, 'curve'):
-        #             self._legend.addItem(plot_item, label)
-        #     except Exception as e:
-        #         print(f"Warning: Failed to add item {trace_id} to legend: {e}")
+        self._legend = self._plot_item.addLegend()
 
         # Set column count if supported (PyQtGraph 0.12.2+)
         if hasattr(self._legend, 'setColumnCount'):
@@ -3192,42 +3188,6 @@ class ChartView(QWidget):
 
         # Apply styling
         self._set_initial_legend_color()
-
-    # def _update_legend_layout(self) -> None:
-    #     """Update the legend layout to refresh column arrangement.
-
-    #     This is called after traces are added or removed to ensure the legend
-    #     properly reflows items according to the current column count.
-
-    #     PyQtGraph's LegendItem doesn't automatically reflow when items change,
-    #     so we need to recreate the legend to apply the current column layout.
-    #     """
-    #     if not self._legend:
-    #         return
-
-    #     # Only recreate if we have multiple columns (single column works fine without recreation)
-    #     if self._legend_columns <= 1:
-    #         return
-
-    #     # Save the current legend position (if it was moved by user)
-    #     try:
-    #         legend_pos = self._legend.pos()
-    #     except Exception:
-    #         legend_pos = None
-
-    #     # Recreate the legend with current settings
-    #     # This is necessary because PyQtGraph doesn't reflow columns dynamically
-    #     self._create_legend()
-
-    #     # Apply legend styling to ensure proper appearance
-    #     self._apply_legend_styling()
-
-    #     # Restore the legend position if it was previously set
-    #     if legend_pos is not None:
-    #         try:
-    #             self._legend.setPos(legend_pos)
-    #         except Exception:
-    #             pass  # Position restoration failed, use default
 
     def _show_legend_properties_dialog(self) -> None:
         """Show dialog to configure legend columns (position is draggable)."""

@@ -1040,6 +1040,46 @@ class MarkerController(QWidget):
         for marker in self.markers.values():
             marker.remove_trace_data(trace_id)
 
+    def rename_trace_label(self, old_label: str, new_label: str):
+        """
+        Rename a trace label in all markers, preserving order and data.
+
+        Args:
+            old_label: Current trace label
+            new_label: New trace label
+        """
+        # Update cache - need to maintain order
+        if old_label in self._trace_data_cache:
+            # Rebuild the dict to maintain order
+            new_cache = {}
+            for key, value in self._trace_data_cache.items():
+                if key == old_label:
+                    new_cache[new_label] = value
+                else:
+                    new_cache[key] = value
+            self._trace_data_cache = new_cache
+
+        # Update all markers
+        for marker in self.markers.values():
+            if isinstance(marker, InteractiveMarker):
+                # Update the marker's traces dictionary, preserving order
+                if old_label in marker.traces:
+                    # Rebuild traces dict to maintain order
+                    new_traces = {}
+                    for key, value in marker.traces.items():
+                        if key == old_label:
+                            new_traces[new_label] = value
+                        else:
+                            new_traces[key] = value
+                    marker.traces = new_traces
+
+                    # Update target_trace if it matches the old label
+                    if marker.target_trace == old_label:
+                        marker.target_trace = new_label
+
+        # Update table to reflect new labels
+        self._update_table()
+
     def _update_marker_values(self):
         """Update marker value display."""
         if not self.markers:
