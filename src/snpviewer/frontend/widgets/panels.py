@@ -671,8 +671,16 @@ class ChartsAreaPanel(QWidget):
         if not chart_id:  # Skip placeholder or invalid tabs
             return
 
+        # Get the widget for this tab
+        widget = self._chart_tabs.widget(tab_index)
+        if not widget:
+            return
+
         # Create context menu
         menu = QMenu(self)
+
+        rename_action = menu.addAction("Rename Chart...")
+        menu.addSeparator()
 
         duplicate_action = menu.addAction("Duplicate Chart")
         duplicate_action.setShortcut("Ctrl+D")
@@ -685,7 +693,10 @@ class ChartsAreaPanel(QWidget):
         # Show menu and handle action
         action = menu.exec(self._chart_tabs.tabBar().mapToGlobal(position))
 
-        if action == duplicate_action:
+        if action == rename_action:
+            # Call the widget's existing rename method
+            widget._change_tab_title()
+        elif action == duplicate_action:
             self.duplicate_chart_requested.emit(chart_id)
         elif action == close_action:
             self._on_tab_close_requested(tab_index)

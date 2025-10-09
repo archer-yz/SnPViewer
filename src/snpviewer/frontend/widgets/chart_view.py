@@ -329,9 +329,9 @@ class ChartView(QWidget):
         self._change_chart_title_action.triggered.connect(self._change_chart_title)
         self._context_menu.addAction(self._change_chart_title_action)
 
-        self._change_tab_title_action = QAction("Change Tab Title...", self)
-        self._change_tab_title_action.triggered.connect(self._change_tab_title)
-        self._context_menu.addAction(self._change_tab_title_action)
+        # self._change_tab_title_action = QAction("Change Tab Title...", self)
+        # self._change_tab_title_action.triggered.connect(self._change_tab_title)
+        # self._context_menu.addAction(self._change_tab_title_action)
 
         self._font_styling_action = QAction("Font Styling...", self)
         self._font_styling_action.triggered.connect(self._show_font_styling_dialog)
