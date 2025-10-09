@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (QCheckBox, QHeaderView, QInputDialog, QMenu,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
+from snpviewer.frontend.constants import DEFAULT_MARKER_COLORS
+
 
 class DraggableScatterPlotItem(pg.ScatterPlotItem):
     """ScatterPlotItem with proper mouse press/drag/release handling and context menu."""
@@ -857,7 +859,7 @@ class MarkerController(QWidget):
         self.coupled_mode = False
 
         # Marker colors
-        self.marker_colors = ["#FF0000", "#00FF00", "#0000FF", "#FF00FF", "#00FFFF", "#FFFF00"]
+        self.marker_colors = DEFAULT_MARKER_COLORS
         self.next_marker_id = 1
 
         # Marker info overlay (will be created when plot_item is set)

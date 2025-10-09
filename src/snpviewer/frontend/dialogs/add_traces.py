@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.constants import DEFAULT_TRACE_COLORS, DEFAULT_LINE_STYLES
 
 
 class AddTracesDialog(QDialog):
@@ -319,10 +320,6 @@ class AddTracesDialog(QDialog):
         """
         traces_to_add = []
 
-        # Color palette for new traces
-        colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                  "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
-
         # Get colors already in use to avoid duplication
         used_colors = set()
         for trace_id, (trace_dataset_id, trace, dataset_obj) in self._existing_traces.items():
@@ -330,10 +327,10 @@ class AddTracesDialog(QDialog):
                 used_colors.add(trace.style.color)
 
         # Start with colors not already in use
-        available_colors = [c for c in colors if c not in used_colors]
+        available_colors = [c for c in DEFAULT_TRACE_COLORS if c not in used_colors]
         if not available_colors:
             # If all colors are used, cycle through all colors
-            available_colors = colors
+            available_colors = DEFAULT_TRACE_COLORS
 
         color_index = 0
 
@@ -401,13 +398,8 @@ class AddTracesDialog(QDialog):
                 selected_color = available_colors[color_index % len(available_colors)]
 
                 # Vary line styles for visual distinction
-                line_styles = ["solid", "dashed", "dotted", "dash_dot"]
-                if i == j:  # Reflection parameters
-                    line_style = "solid"
-                    line_width = 2
-                else:  # Transmission parameters
-                    line_style = line_styles[(color_index // len(available_colors)) % len(line_styles)]
-                    line_width = 2
+                line_style = DEFAULT_LINE_STYLES[(color_index // len(available_colors)) % len(DEFAULT_LINE_STYLES)]
+                line_width = 2
 
                 style = TraceStyle(
                     color=selected_color,

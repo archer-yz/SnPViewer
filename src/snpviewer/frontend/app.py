@@ -29,6 +29,8 @@ from snpviewer.backend.models.chart import AxisConfiguration, Chart, ChartAxes
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.project import DatasetRef, Preferences, Project
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.constants import (DEFAULT_LINE_STYLES,
+                                          DEFAULT_TRACE_COLORS)
 from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
 from snpviewer.frontend.dialogs.create_chart import CreateChartDialog
 from snpviewer.frontend.dialogs.linear_phase_error import \
@@ -1245,10 +1247,9 @@ class SnPViewerMainWindow(QMainWindow):
 
             if chart_type.lower() in ['smith', 'smith_chart']:
                 # For Smith charts, add reflection parameters (S11, S22, etc.)
-                colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
                 for i in range(min(n_ports, 4)):  # Limit to 4 traces for readability
                     style = TraceStyle(
-                        color=colors[i % len(colors)],
+                        color=DEFAULT_TRACE_COLORS[i % len(DEFAULT_TRACE_COLORS)],
                         line_width=2,
                         marker_style='none'
                     )
@@ -1265,13 +1266,12 @@ class SnPViewerMainWindow(QMainWindow):
                     chart_widget.add_trace(trace, style)
             else:
                 # For Cartesian charts, add magnitude traces
-                colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
                 trace_count = 0
 
                 # Add reflection parameters (S11, S22, etc.)
                 for i in range(min(n_ports, 2)):  # S11, S22
                     style = TraceStyle(
-                        color=colors[trace_count % len(colors)],
+                        color=DEFAULT_TRACE_COLORS[trace_count % len(DEFAULT_TRACE_COLORS)],
                         line_width=2,
                         marker_style='none'
                     )
@@ -1294,10 +1294,12 @@ class SnPViewerMainWindow(QMainWindow):
                     for i, j in [(0, 1), (1, 0)]:  # S12, S21
                         if trace_count >= 4:
                             break
+                        # Use dashed line for transmission (i != j), solid for reflection (i == j)
+                        line_style = DEFAULT_LINE_STYLES[1] if i != j else DEFAULT_LINE_STYLES[0]
                         style = TraceStyle(
-                            color=colors[trace_count % len(colors)],
+                            color=DEFAULT_TRACE_COLORS[trace_count % len(DEFAULT_TRACE_COLORS)],
                             line_width=2,
-                            line_style="dashed" if i != j else "solid",
+                            line_style=line_style,
                             marker_style='none'
                         )
                         dataset_id = dataset.id if hasattr(dataset, 'id') else ''
@@ -1690,10 +1692,8 @@ class SnPViewerMainWindow(QMainWindow):
         # Add the trace to the chart
         if hasattr(chart_widget, 'add_trace'):
             # Pick a color from a palette (cycling through available colors)
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                      "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
             trace_count = len(chart_widget._traces) if hasattr(chart_widget, '_traces') else 0
-            color = colors[trace_count % len(colors)]
+            color = DEFAULT_TRACE_COLORS[trace_count % len(DEFAULT_TRACE_COLORS)]
 
             # Create a new trace with all required fields
             trace = Trace(
@@ -2344,8 +2344,6 @@ class SnPViewerMainWindow(QMainWindow):
         """
         try:
             traces_to_add = []
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                      "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
 
             for idx, trace_id in enumerate(trace_ids):
                 try:
@@ -2387,10 +2385,11 @@ class SnPViewerMainWindow(QMainWindow):
                         trace = Trace.from_dict(saved_traces[trace_id])
                     else:
                         # Create trace with default style
+                        line_style = DEFAULT_LINE_STYLES[(idx // len(DEFAULT_TRACE_COLORS)) % len(DEFAULT_LINE_STYLES)]
                         style = TraceStyle(
-                            color=colors[idx % len(colors)],
+                            color=DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)],
                             line_width=2,
-                            line_style="solid" if i == j else "dashed"
+                            line_style=line_style
                         )
                         trace = Trace(
                             id=trace_id,
@@ -2430,9 +2429,6 @@ class SnPViewerMainWindow(QMainWindow):
             traces_to_add = []
 
             # Color palette for different traces
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                      "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
-
             for idx, trace_id in enumerate(trace_ids):
 
                 s_param = None
@@ -2517,8 +2513,9 @@ class SnPViewerMainWindow(QMainWindow):
 
                                     # Create trace with correct parameters
                                     # Use different colors and styles for different traces
-                                    color = colors[idx % len(colors)]
-                                    line_style = "solid" if i == j else "dashed"  # Reflection vs transmission
+                                    color = DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)]
+                                    line_style = DEFAULT_LINE_STYLES[(idx // len(DEFAULT_TRACE_COLORS))
+                                                                     % len(DEFAULT_LINE_STYLES)]
 
                                     style = TraceStyle(
                                         color=color,

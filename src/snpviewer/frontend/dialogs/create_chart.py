@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.constants import DEFAULT_TRACE_COLORS, DEFAULT_LINE_STYLES
 
 
 class CreateChartDialog(QDialog):
@@ -258,10 +259,6 @@ class CreateChartDialog(QDialog):
         if not selected_params:
             return traces
 
-        # Color palette for traces
-        colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                  "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
-
         trace_idx = 0
 
         # Create traces for each combination of dataset and parameter
@@ -281,9 +278,9 @@ class CreateChartDialog(QDialog):
 
                 # Create style
                 style = TraceStyle(
-                    color=colors[trace_idx % len(colors)],
+                    color=DEFAULT_TRACE_COLORS[trace_idx % len(DEFAULT_TRACE_COLORS)],
                     line_width=2,
-                    line_style="solid" if i == j else "dashed",
+                    line_style=DEFAULT_LINE_STYLES[(trace_idx // len(DEFAULT_TRACE_COLORS)) % len(DEFAULT_LINE_STYLES)],
                     marker_style='none'
                 )
 

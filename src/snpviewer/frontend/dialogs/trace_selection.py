@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.constants import (DEFAULT_LINE_STYLES,
+                                          DEFAULT_TRACE_COLORS)
 
 
 class TraceSelectionDialog(QDialog):
@@ -167,10 +169,6 @@ class TraceSelectionDialog(QDialog):
         selected_params = self.get_selected_parameters()
         traces = []
 
-        # Color palette for traces
-        colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD",
-                  "#74B9FF", "#E17055", "#00B894", "#FDCB6E", "#6C5CE7", "#A29BFE"]
-
         for idx, (i, j) in enumerate(selected_params):
             # Determine metric based on chart type
             if self._chart_type.lower() == "magnitude":
@@ -183,10 +181,11 @@ class TraceSelectionDialog(QDialog):
                 metric = self._chart_type.lower()
 
             # Create style
+            line_style = DEFAULT_LINE_STYLES[(idx // len(DEFAULT_TRACE_COLORS)) % len(DEFAULT_LINE_STYLES)]
             style = TraceStyle(
-                color=colors[idx % len(colors)],
+                color=DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)],
                 line_width=2,
-                line_style="solid" if i == j else "dashed",
+                line_style=line_style,
                 marker_style='none'
             )
 

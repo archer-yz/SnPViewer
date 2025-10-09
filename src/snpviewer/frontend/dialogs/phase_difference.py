@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
                                QVBoxLayout, QWidget)
 
 from snpviewer.backend.models.dataset import Dataset
+from snpviewer.frontend.constants import DEFAULT_TRACE_COLORS
 from snpviewer.frontend.plotting.plot_pipelines import (convert_s_to_phase,
                                                         get_frequency_array,
                                                         unwrap_phase)
@@ -292,8 +293,6 @@ class PhaseDifferenceDialog(QDialog):
         ref_display_name = getattr(ref_dataset, 'display_name', ref_dataset_id)
 
         # Calculate and plot differences
-        colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
-
         for idx, comp_id in enumerate(comparison_ids):
             if comp_id not in self._datasets:
                 continue
@@ -321,7 +320,7 @@ class PhaseDifferenceDialog(QDialog):
 
             # Plot
             comp_display_name = getattr(comp_dataset, 'display_name', comp_id)
-            pen = pg.mkPen(color=colors[idx % len(colors)], width=2)
+            pen = pg.mkPen(color=DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)], width=2)
             self._plot_widget.plot(ref_freq_filtered, phase_diff,
                                    pen=pen, name=f"{comp_display_name} - {ref_display_name}")
 
@@ -331,7 +330,7 @@ class PhaseDifferenceDialog(QDialog):
                 'dataset_name': comp_display_name,
                 'frequency': ref_freq_filtered,
                 'phase_difference': phase_diff,
-                'color': colors[idx % len(colors)]
+                'color': DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)]
             })
 
         # Store current data

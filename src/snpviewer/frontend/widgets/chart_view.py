@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
+from snpviewer.frontend.constants import (DEFAULT_LINE_STYLES,
+                                          DEFAULT_TRACE_COLORS)
 from snpviewer.frontend.dialogs.common_dialogs import (
     FontStylingWidget, PlotAreaPropertiesWidget)
 from snpviewer.frontend.dialogs.linear_phase_error import \
@@ -433,7 +435,7 @@ class ChartView(QWidget):
         style_layout = QHBoxLayout()
         style_label = QLabel("Line Style:")
         style_combo = QComboBox()
-        style_combo.addItems(["solid", "dashed", "dotted", "dashdot"])
+        style_combo.addItems(DEFAULT_LINE_STYLES)
 
         style_layout.addWidget(style_label)
         style_layout.addWidget(style_combo)
@@ -2234,7 +2236,6 @@ class ChartView(QWidget):
 
             # Recalculate differences
             recalculated_differences = []
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
 
             for idx, comp_id in enumerate(comparison_ids):
                 if comp_id not in datasets:
@@ -2269,7 +2270,7 @@ class ChartView(QWidget):
                 )
 
                 # Preserve color from original differences if available
-                original_color = colors[idx % len(colors)]
+                original_color = DEFAULT_TRACE_COLORS[idx % len(DEFAULT_TRACE_COLORS)]
                 if 'differences' in config:
                     for orig_diff in config['differences']:
                         if orig_diff['dataset_id'] == comp_id:
