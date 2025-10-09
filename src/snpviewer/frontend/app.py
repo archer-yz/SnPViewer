@@ -685,6 +685,21 @@ class SnPViewerMainWindow(QMainWindow):
                     if hasattr(chart_widget, 'get_phase_unwrap'):
                         chart.phase_unwrap = chart_widget.get_phase_unwrap()
 
+                    # Update axis ranges
+                    if hasattr(chart_widget, 'get_axis_ranges'):
+                        axis_ranges = chart_widget.get_axis_ranges()
+                        if axis_ranges and chart.axes:
+                            # Update X axis
+                            if 'x_min' in axis_ranges and 'x_max' in axis_ranges:
+                                chart.axes.x.auto_range = False
+                                chart.axes.x.min_value = axis_ranges['x_min']
+                                chart.axes.x.max_value = axis_ranges['x_max']
+                            # Update Y axis
+                            if 'y_min' in axis_ranges and 'y_max' in axis_ranges:
+                                chart.axes.y.auto_range = False
+                                chart.axes.y.min_value = axis_ranges['y_min']
+                                chart.axes.y.max_value = axis_ranges['y_max']
+
                     # Update marker state
                     if hasattr(chart_widget, 'get_marker_controller'):
                         marker_controller = chart_widget.get_marker_controller()
@@ -1860,6 +1875,18 @@ class SnPViewerMainWindow(QMainWindow):
                             # Restore phase unwrap setting
                             if hasattr(chart, 'phase_unwrap') and hasattr(chart_widget, 'restore_phase_unwrap'):
                                 chart_widget.restore_phase_unwrap(chart.phase_unwrap)
+
+                            # Restore axis ranges
+                            if hasattr(chart, 'axes') and chart.axes and hasattr(chart_widget, 'restore_axis_ranges'):
+                                if not chart.axes.x.auto_range or not chart.axes.y.auto_range:
+                                    axis_ranges = {}
+                                    if not chart.axes.x.auto_range:
+                                        axis_ranges['x_min'] = chart.axes.x.min_value
+                                        axis_ranges['x_max'] = chart.axes.x.max_value
+                                    if not chart.axes.y.auto_range:
+                                        axis_ranges['y_min'] = chart.axes.y.min_value
+                                        axis_ranges['y_max'] = chart.axes.y.max_value
+                                    chart_widget.restore_axis_ranges(axis_ranges)
 
                             # Restore linear phase error data BEFORE markers
                             if hasattr(chart, 'linear_phase_error_data') and chart.linear_phase_error_data:

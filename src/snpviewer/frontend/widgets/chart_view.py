@@ -859,6 +859,9 @@ class ChartView(QWidget):
             # Apply legend styling if available
             self._apply_legend_styling()
 
+            # Update legend layout if using multiple columns
+            # self._update_legend_layout()
+
             # Update marker controller with actual plotted data
             if self._marker_controller is not None:
                 # Pass the actual X,Y data being plotted (e.g., freq vs dB magnitude)
@@ -881,7 +884,8 @@ class ChartView(QWidget):
             del self._plot_items[trace_id]
 
         if trace_id in self._traces:
-            trace_label = self._traces[trace_id].get_display_label()
+            # Get the label from our mapping for marker controller
+            trace_label = self._trace_id_to_label.get(trace_id, trace_id)
             del self._traces[trace_id]
 
             # Remove from marker controller
@@ -890,6 +894,13 @@ class ChartView(QWidget):
 
         if trace_id in self._datasets:
             del self._datasets[trace_id]
+
+        # Remove from label mapping
+        if trace_id in self._trace_id_to_label:
+            del self._trace_id_to_label[trace_id]
+
+        # Update legend layout if using multiple columns
+        # self._update_legend_layout()
 
     def remove_traces_by_dataset(self, dataset_id: str) -> int:
         """
@@ -1972,6 +1983,43 @@ class ChartView(QWidget):
             self._apply_plot_area_settings(self._plot_area_settings)
         except Exception as e:
             print(f"Warning: Could not apply restored plot area settings: {e}")
+
+    def get_axis_ranges(self) -> Dict[str, Any]:
+        """Get current axis ranges for serialization."""
+        try:
+            view_box = self._plot_item.getViewBox()
+            [[x_min, x_max], [y_min, y_max]] = view_box.viewRange()
+
+            return {
+                'x_min': x_min,
+                'x_max': x_max,
+                'y_min': y_min,
+                'y_max': y_max
+            }
+        except Exception as e:
+            print(f"Warning: Could not get axis ranges: {e}")
+            return {}
+
+    def restore_axis_ranges(self, ranges: Dict[str, Any]) -> None:
+        """Restore axis ranges from saved data.
+
+        Args:
+            ranges: Dictionary containing 'x_min', 'x_max', 'y_min', 'y_max'
+        """
+        if not ranges:
+            return
+
+        try:
+            x_min = ranges.get('x_min')
+            x_max = ranges.get('x_max')
+            y_min = ranges.get('y_min')
+            y_max = ranges.get('y_max')
+
+            if x_min is not None and x_max is not None and y_min is not None and y_max is not None:
+                view_box = self._plot_item.getViewBox()
+                view_box.setRange(xRange=(x_min, x_max), yRange=(y_min, y_max), padding=0)
+        except Exception as e:
+            print(f"Warning: Could not restore axis ranges: {e}")
 
     def get_phase_unwrap(self) -> bool:
         """Get phase unwrap setting for serialization."""
@@ -3101,13 +3149,42 @@ class ChartView(QWidget):
         # Remove existing legend if present
         if self._legend is not None:
             try:
+                # Clear all items from the legend first
+                # if hasattr(self._legend, 'clear'):
+                #     self._legend.clear()
+                # Remove the legend from the plot
                 self._plot_item.removeItem(self._legend)
-            except Exception:
-                pass  # Legend might not be attached
+            except Exception as e:
+                print(f"Warning: Failed to remove legend: {e}")
+
+            # self._legend = None
 
         # Add new legend (PyQtGraph places it in upper right by default)
         # The legend is draggable, so users can move it wherever they want
-        self._legend = self._plot_item.addLegend()
+        try:
+            self._legend = self._plot_item.addLegend()
+        except Exception as e:
+            print(f"Warning: Failed to add legend: {e}")
+            # Try to get existing legend if addLegend failed
+            if hasattr(self._plot_item, 'legend'):
+                self._legend = self._plot_item.legend
+
+        # # Ensure we have a legend
+        # if self._legend is None:
+        #     print("Error: Legend is None after creation")
+        #     return
+
+        # # Manually add all existing plot items to the legend
+        # # This is necessary when recreating the legend after plots already exist
+        # for trace_id, plot_item in self._plot_items.items():
+        #     try:
+        #         # Get the label for this trace
+        #         label = self._trace_id_to_label.get(trace_id, trace_id)
+        #         # Add to legend if it has a visible plot item
+        #         if plot_item and hasattr(plot_item, 'curve'):
+        #             self._legend.addItem(plot_item, label)
+        #     except Exception as e:
+        #         print(f"Warning: Failed to add item {trace_id} to legend: {e}")
 
         # Set column count if supported (PyQtGraph 0.12.2+)
         if hasattr(self._legend, 'setColumnCount'):
@@ -3115,6 +3192,42 @@ class ChartView(QWidget):
 
         # Apply styling
         self._set_initial_legend_color()
+
+    # def _update_legend_layout(self) -> None:
+    #     """Update the legend layout to refresh column arrangement.
+
+    #     This is called after traces are added or removed to ensure the legend
+    #     properly reflows items according to the current column count.
+
+    #     PyQtGraph's LegendItem doesn't automatically reflow when items change,
+    #     so we need to recreate the legend to apply the current column layout.
+    #     """
+    #     if not self._legend:
+    #         return
+
+    #     # Only recreate if we have multiple columns (single column works fine without recreation)
+    #     if self._legend_columns <= 1:
+    #         return
+
+    #     # Save the current legend position (if it was moved by user)
+    #     try:
+    #         legend_pos = self._legend.pos()
+    #     except Exception:
+    #         legend_pos = None
+
+    #     # Recreate the legend with current settings
+    #     # This is necessary because PyQtGraph doesn't reflow columns dynamically
+    #     self._create_legend()
+
+    #     # Apply legend styling to ensure proper appearance
+    #     self._apply_legend_styling()
+
+    #     # Restore the legend position if it was previously set
+    #     if legend_pos is not None:
+    #         try:
+    #             self._legend.setPos(legend_pos)
+    #         except Exception:
+    #             pass  # Position restoration failed, use default
 
     def _show_legend_properties_dialog(self) -> None:
         """Show dialog to configure legend columns (position is draggable)."""
