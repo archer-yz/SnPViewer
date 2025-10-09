@@ -15,7 +15,7 @@ import pyqtgraph as pg
 from pyqtgraph import FillBetweenItem, LinearRegionItem
 from pyqtgraph.exporters import ImageExporter
 from PySide6.QtCore import QPoint, Qt, Signal, Slot, QPointF, QTimer
-from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont
+from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont, QCursor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QFileDialog, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -890,9 +890,30 @@ class ChartView(QWidget):
             trace_label = self._trace_id_to_label.get(trace_id, trace_id)
             del self._traces[trace_id]
 
-            # Remove from marker controller
+            # Remove from marker controller and clean up orphaned markers
             if self._marker_controller is not None:
+                # Remove trace data from all markers
                 self._marker_controller.remove_trace_data(trace_label)
+
+                # Check and remove markers that no longer have valid traces
+                markers_to_remove = []
+                for marker_id, marker in self._marker_controller.markers.items():
+                    if not marker.coupled:
+                        # Uncoupled marker: remove if target trace was deleted
+                        if marker.target_trace == trace_label or not marker.traces:
+                            markers_to_remove.append(marker_id)
+                    else:
+                        # Coupled marker: remove if no traces left
+                        if not marker.traces:
+                            markers_to_remove.append(marker_id)
+
+                # Remove orphaned markers
+                for marker_id in markers_to_remove:
+                    self._marker_controller.remove_marker(marker_id)
+
+                # Update marker table and info overlay to reflect changes
+                self._marker_controller._update_table()
+                self._marker_controller._update_marker_overlay()
 
         if trace_id in self._datasets:
             del self._datasets[trace_id]
@@ -2891,8 +2912,56 @@ class ChartView(QWidget):
                 if self._marker_controller is not None:
                     self._marker_controller.add_marker_at_frequency(freq, target_trace=trace_label)
         else:
-            # Normal mode: show trace selection dialog
-            self._show_trace_selection_dialog(selected_trace_id=trace_id)
+            # Normal mode: show context menu for trace actions
+            self._show_trace_context_menu(trace_id, event)
+
+    def _show_trace_context_menu(self, trace_id: str, event=None) -> None:
+        """Show context menu for trace actions."""
+        if trace_id not in self._traces:
+            return
+
+        # Create context menu
+        menu = QMenu(self)
+
+        # Trace Properties action
+        properties_action = menu.addAction("Trace Properties...")
+        properties_action.triggered.connect(lambda: self._show_trace_selection_dialog(selected_trace_id=trace_id))
+
+        menu.addSeparator()
+
+        # Delete Trace action
+        delete_action = menu.addAction("Delete Trace")
+        delete_action.triggered.connect(lambda: self._delete_trace_with_confirmation(trace_id))
+
+        # Show menu at cursor position
+        if event is not None:
+            # Get the global position from the scene event
+            global_pos = self._plot_widget.mapToGlobal(self._plot_widget.mapFromScene(event.scenePos()))
+            menu.exec(global_pos)
+        else:
+            # Fallback to cursor position
+            menu.exec(QCursor.pos())
+
+    def _delete_trace_with_confirmation(self, trace_id: str) -> None:
+        """Delete a trace after user confirmation."""
+        if trace_id not in self._traces:
+            return
+
+        # Get trace information for confirmation message
+        trace = self._traces[trace_id]
+        trace_label = trace.label if hasattr(trace, 'label') else trace_id
+
+        # Ask for confirmation
+        reply = QMessageBox.question(
+            self,
+            "Delete Trace",
+            f"Are you sure you want to delete the trace:\n\n{trace_label}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.remove_trace(trace_id)
 
     def _update_trace_style(self, trace_id: str) -> None:
         """Update the visual style of a trace."""
