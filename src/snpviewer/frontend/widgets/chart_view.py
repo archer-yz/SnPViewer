@@ -89,6 +89,9 @@ class ChartView(QWidget):
         self._limit_lines: Dict[str, Dict] = {}  # {line_id: {type, value, label, color, style, item}}
         self._next_limit_id = 1
 
+        # Legend configuration
+        self._legend_columns = 1  # Number of columns in legend
+
         # Marker controller (initially None, created when first needed)
         self._marker_controller: Optional[MarkerController] = None
         self._markers_visible = False
@@ -213,8 +216,9 @@ class ChartView(QWidget):
         self._set_axis_label_with_styling('left', self._y_axis_label)
         self._set_title_with_styling(self._chart_title)
 
-        # Add legend
-        self._legend = self._plot_item.addLegend()
+        # Add legend with configurable position
+        self._legend = None
+        self._create_legend()
 
         # Set initial legend text color to black
         self._set_initial_legend_color()
@@ -334,6 +338,10 @@ class ChartView(QWidget):
         self._plot_area_properties_action = QAction("Plot Area Properties...", self)
         self._plot_area_properties_action.triggered.connect(self._show_plot_area_properties_dialog)
         self._context_menu.addAction(self._plot_area_properties_action)
+
+        self._legend_properties_action = QAction("Legend Properties...", self)
+        self._legend_properties_action.triggered.connect(self._show_legend_properties_dialog)
+        self._context_menu.addAction(self._legend_properties_action)
 
         self._context_menu.addSeparator()
 
@@ -3087,6 +3095,95 @@ class ChartView(QWidget):
             # Hide top and right axes
             self._plot_item.showAxis('right', False)
             self._plot_item.showAxis('top', False)
+
+    def _create_legend(self) -> None:
+        """Create or recreate the legend with current column settings."""
+        # Remove existing legend if present
+        if self._legend is not None:
+            try:
+                self._plot_item.removeItem(self._legend)
+            except Exception:
+                pass  # Legend might not be attached
+
+        # Add new legend (PyQtGraph places it in upper right by default)
+        # The legend is draggable, so users can move it wherever they want
+        self._legend = self._plot_item.addLegend()
+
+        # Set column count if supported (PyQtGraph 0.12.2+)
+        if hasattr(self._legend, 'setColumnCount'):
+            self._legend.setColumnCount(self._legend_columns)
+
+        # Apply styling
+        self._set_initial_legend_color()
+
+    def _show_legend_properties_dialog(self) -> None:
+        """Show dialog to configure legend columns (position is draggable)."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Legend Properties")
+        dialog.setModal(True)
+        dialog.resize(350, 180)
+
+        layout = QVBoxLayout(dialog)
+
+        # Info label about dragging
+        info_label = QLabel("Tip: You can drag the legend to reposition it on the chart.")
+        info_label.setStyleSheet("color: #666; font-style: italic;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # Columns group
+        columns_group = QGroupBox("Layout")
+        columns_layout = QVBoxLayout(columns_group)
+
+        columns_spin = QSpinBox()
+        columns_spin.setMinimum(1)
+        columns_spin.setMaximum(10)
+        columns_spin.setValue(self._legend_columns)
+        columns_spin.setToolTip("Number of columns in the legend (1-10)")
+
+        columns_layout.addWidget(QLabel("Number of Columns:"))
+        columns_layout.addWidget(columns_spin)
+        layout.addWidget(columns_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        apply_button = QPushButton("Apply")
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addStretch()
+        button_layout.addWidget(apply_button)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        # Connect buttons
+        def apply_legend_settings():
+            # Get new settings
+            new_columns = columns_spin.value()
+
+            # Check if settings changed
+            if new_columns != self._legend_columns:
+                # Update settings
+                self._legend_columns = new_columns
+
+                # Update legend columns (without recreating the entire legend to preserve position)
+                if self._legend and hasattr(self._legend, 'setColumnCount'):
+                    self._legend.setColumnCount(self._legend_columns)
+                else:
+                    # If setColumnCount not available, need to recreate
+                    self._create_legend()
+
+                # Apply styling
+                self._apply_legend_styling()
+
+                # Emit signal
+                self.properties_changed.emit()
+
+        apply_button.clicked.connect(apply_legend_settings)
+        ok_button.clicked.connect(lambda: (apply_legend_settings(), dialog.accept()))
+        cancel_button.clicked.connect(dialog.reject)
+
+        dialog.exec()
 
     def _apply_chart_fonts(self, fonts: dict, colors: dict) -> None:
         """Apply font styling to chart elements."""
