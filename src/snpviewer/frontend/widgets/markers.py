@@ -10,11 +10,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QRectF, QCoreApplication
 from PySide6.QtGui import QAction, QColor, QFont, QPen
 from PySide6.QtWidgets import (QCheckBox, QHeaderView, QInputDialog, QMenu,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QWidget, QGraphicsTextItem)
 
 from snpviewer.frontend.constants import DEFAULT_MARKER_COLORS
 
@@ -752,8 +752,6 @@ class MarkerInfoOverlay(pg.GraphicsWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QGraphicsTextItem
-
         # Single text item for all content
         self.text_item = QGraphicsTextItem(self)
         text_font = QFont("Courier New")  # Monospace font for alignment
@@ -783,7 +781,6 @@ class MarkerInfoOverlay(pg.GraphicsWidget):
 
     def boundingRect(self):
         """Return the bounding rectangle."""
-        from PySide6.QtCore import QRectF
         return QRectF(0, 0, self.min_width, self.min_height)
 
     def paint(self, p, *args):
@@ -1531,7 +1528,6 @@ class MarkerController(QWidget):
                 self.marker_table.viewport().update()
                 self.marker_table.repaint()  # Force immediate repaint
                 # Process events to ensure UI updates
-                from PySide6.QtCore import QCoreApplication
                 QCoreApplication.processEvents()
                 break
 

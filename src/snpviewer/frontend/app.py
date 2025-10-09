@@ -33,8 +33,8 @@ from snpviewer.frontend.constants import (DEFAULT_LINE_STYLES,
                                           DEFAULT_TRACE_COLORS)
 from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
 from snpviewer.frontend.dialogs.create_chart import CreateChartDialog
-from snpviewer.frontend.dialogs.linear_phase_error import \
-    LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.phase_difference import PhaseDifferenceDialog
 from snpviewer.frontend.dialogs.preferences import PreferencesDialog
 from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
 from snpviewer.frontend.plotting.plot_pipelines import PlotType
@@ -713,6 +713,23 @@ class SnPViewerMainWindow(QMainWindow):
                             if hasattr(marker_controller, 'marker_table'):
                                 chart.marker_show_table = marker_controller.marker_table.isVisible()
 
+                            # Save marker overlay position if manually positioned
+                            if hasattr(marker_controller, 'marker_info_overlay'):
+                                overlay = marker_controller.marker_info_overlay
+                                if overlay and hasattr(overlay, 'user_positioned') and overlay.user_positioned:
+                                    pos = overlay.pos()
+                                    chart.marker_overlay_offset_x = pos.x()
+                                    chart.marker_overlay_offset_y = pos.y()
+
+                    # Save legend columns and position
+                    if hasattr(chart_widget, 'get_legend_columns'):
+                        chart.legend_columns = chart_widget.get_legend_columns()
+                    if hasattr(chart_widget, 'get_legend_offset'):
+                        offset = chart_widget.get_legend_offset()
+                        if offset:
+                            chart.legend_offset_x = offset[0]
+                            chart.legend_offset_y = offset[1]
+
                     # Update linear phase error data
                     if hasattr(chart_widget, 'get_linear_phase_error_config'):
                         chart.linear_phase_error_data = chart_widget.get_linear_phase_error_config()
@@ -1156,9 +1173,7 @@ class SnPViewerMainWindow(QMainWindow):
             chart_widget.set_chart_title(config.get('title', 'Phase Difference'))
 
             # Create the phase difference plot using the chart_view method
-            from snpviewer.frontend.widgets.chart_view import \
-                ChartView as ChartViewClass
-            if hasattr(ChartViewClass, 'create_phase_difference_plot'):
+            if hasattr(ChartView, 'create_phase_difference_plot'):
                 chart_widget.create_phase_difference_plot(config)
             else:
                 raise NotImplementedError("create_phase_difference_plot not yet implemented in ChartView")
@@ -1910,13 +1925,35 @@ class SnPViewerMainWindow(QMainWindow):
                                 marker_coupled_mode = getattr(chart, 'marker_coupled_mode', False)
                                 marker_show_overlay = getattr(chart, 'marker_show_overlay', True)
                                 marker_show_table = getattr(chart, 'marker_show_table', False)
+                                marker_overlay_offset = None
+                                if (hasattr(chart, 'marker_overlay_offset_x') and
+                                        hasattr(chart, 'marker_overlay_offset_y')):
+                                    if (chart.marker_overlay_offset_x is not None and
+                                            chart.marker_overlay_offset_y is not None):
+                                        marker_overlay_offset = (
+                                            chart.marker_overlay_offset_x,
+                                            chart.marker_overlay_offset_y
+                                        )
+
                                 chart_widget.restore_markers(
                                     chart.markers,
                                     marker_mode_active=marker_mode_active,
                                     marker_coupled_mode=marker_coupled_mode,
                                     marker_show_overlay=marker_show_overlay,
-                                    marker_show_table=marker_show_table
+                                    marker_show_table=marker_show_table,
+                                    marker_overlay_offset=marker_overlay_offset
                                 )
+
+                            # Restore legend columns and position
+                            if hasattr(chart, 'legend_columns') and hasattr(chart_widget, 'set_legend_columns'):
+                                chart_widget.set_legend_columns(chart.legend_columns)
+
+                            if hasattr(chart, 'legend_offset_x') and hasattr(chart, 'legend_offset_y'):
+                                if chart.legend_offset_x is not None and chart.legend_offset_y is not None:
+                                    if hasattr(chart_widget, 'set_legend_offset'):
+                                        chart_widget.set_legend_offset(
+                                            chart.legend_offset_x, chart.legend_offset_y)
+
                         except Exception as e:
                             print(f"Warning: Could not restore styling settings for chart {chart.id}: {e}")
                             # Continue without styling restoration
@@ -2213,8 +2250,6 @@ class SnPViewerMainWindow(QMainWindow):
             return
 
         # Create and show the dialog
-        from snpviewer.frontend.dialogs.phase_difference import \
-            PhaseDifferenceDialog
         dialog = PhaseDifferenceDialog(datasets, self)
         dialog.create_chart_requested.connect(self._on_create_phase_difference_chart)
         dialog.exec()

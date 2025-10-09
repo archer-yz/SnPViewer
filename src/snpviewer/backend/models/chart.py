@@ -132,6 +132,9 @@ class Chart:
     linked_x_axis: bool = False
     legend_enabled: bool = True
     legend_position: str = 'right'
+    legend_columns: int = 1  # Number of columns for legend layout
+    legend_offset_x: Optional[float] = None  # Custom X offset for legend position
+    legend_offset_y: Optional[float] = None  # Custom Y offset for legend position
     background_color: str = '#ffffff'
     chart_fonts: Dict[str, Any] = field(default_factory=dict)
     chart_colors: Dict[str, str] = field(default_factory=dict)
@@ -146,6 +149,8 @@ class Chart:
     marker_coupled_mode: bool = False  # Whether markers are in coupled (vertical) mode
     marker_show_overlay: bool = True  # Whether marker info overlay is shown
     marker_show_table: bool = False  # Whether marker table is shown
+    marker_overlay_offset_x: Optional[float] = None  # Custom X offset for marker overlay position
+    marker_overlay_offset_y: Optional[float] = None  # Custom Y offset for marker overlay position
 
     def __post_init__(self) -> None:
         """Post-initialization to set default axes if not provided."""
@@ -353,6 +358,9 @@ class Chart:
             'linked_x_axis': self.linked_x_axis,
             'legend_enabled': self.legend_enabled,
             'legend_position': self.legend_position,
+            'legend_columns': self.legend_columns,
+            'legend_offset_x': self.legend_offset_x,
+            'legend_offset_y': self.legend_offset_y,
             'background_color': self.background_color,
             'chart_fonts': self.chart_fonts,
             'chart_colors': self.chart_colors,
@@ -366,7 +374,9 @@ class Chart:
             'marker_mode_active': self.marker_mode_active,
             'marker_coupled_mode': self.marker_coupled_mode,
             'marker_show_overlay': self.marker_show_overlay,
-            'marker_show_table': self.marker_show_table
+            'marker_show_table': self.marker_show_table,
+            'marker_overlay_offset_x': self.marker_overlay_offset_x,
+            'marker_overlay_offset_y': self.marker_overlay_offset_y
         }
 
     @classmethod
@@ -397,6 +407,9 @@ class Chart:
             linked_x_axis=data.get('linked_x_axis', False),
             legend_enabled=data.get('legend_enabled', True),
             legend_position=data.get('legend_position', 'right'),
+            legend_columns=data.get('legend_columns', 1),
+            legend_offset_x=data.get('legend_offset_x'),
+            legend_offset_y=data.get('legend_offset_y'),
             background_color=data.get('background_color', '#ffffff'),
             chart_fonts=data.get('chart_fonts', {}),
             chart_colors=data.get('chart_colors', {}),
@@ -410,5 +423,7 @@ class Chart:
             marker_mode_active=data.get('marker_mode_active', False),
             marker_coupled_mode=data.get('marker_coupled_mode', False),
             marker_show_overlay=data.get('marker_show_overlay', True),
-            marker_show_table=data.get('marker_show_table', False)
+            marker_show_table=data.get('marker_show_table', False),
+            marker_overlay_offset_x=data.get('marker_overlay_offset_x'),
+            marker_overlay_offset_y=data.get('marker_overlay_offset_y')
         )

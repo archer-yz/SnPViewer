@@ -14,7 +14,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import FillBetweenItem, LinearRegionItem
 from pyqtgraph.exporters import ImageExporter
-from PySide6.QtCore import QPoint, Qt, Signal, Slot
+from PySide6.QtCore import QPoint, Qt, Signal, Slot, QPointF, QTimer
 from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QFileDialog, QGroupBox, QHBoxLayout,
@@ -91,6 +91,8 @@ class ChartView(QWidget):
 
         # Legend configuration
         self._legend_columns = 1  # Number of columns in legend
+        self._legend_custom_position: Optional[Tuple[float, float]] = None  # Custom legend position
+        self._preserve_legend_position = False  # Flag to preserve position during recreation
 
         # Marker controller (initially None, created when first needed)
         self._marker_controller: Optional[MarkerController] = None
@@ -2065,11 +2067,49 @@ class ChartView(QWidget):
         """Check if marker mode is currently active."""
         return self._markers_visible
 
+    def get_legend_columns(self) -> int:
+        """Get the number of legend columns."""
+        return self._legend_columns
+
+    def set_legend_columns(self, columns: int) -> None:
+        """Set the number of legend columns."""
+        if columns > 0 and columns != self._legend_columns:
+            self._legend_columns = columns
+            if self._legend:
+                self._legend.setColumnCount(columns)
+
+    def get_legend_offset(self) -> Optional[Tuple[float, float]]:
+        """Get the legend position offset if manually positioned."""
+        if self._legend and hasattr(self._legend, 'pos'):
+            pos = self._legend.pos()
+            return (pos.x(), pos.y())
+        return None
+
+    def set_legend_offset(self, x: float, y: float) -> None:
+        """Set the legend position offset."""
+        # Store the custom position
+        self._legend_custom_position = (x, y)
+        self._preserve_legend_position = True
+
+        if self._legend:
+            def set_legend_position():
+                # First, disable automatic anchoring by setting anchor to None
+                if hasattr(self._legend, 'anchor'):
+                    # Call anchor with itemPos and parentPos as None to disable automatic positioning
+                    self._legend.anchor(itemPos=None, parentPos=None)
+
+                # Then set the position directly
+                self._legend.setPos(QPointF(x, y))
+
+            # Use a small delay to ensure it's applied after any automatic positioning
+            QTimer.singleShot(100, set_legend_position)
+
     def restore_markers(self, markers_dict: Dict[str, Dict[str, Any]],
                         marker_mode_active: bool = False,
                         marker_coupled_mode: bool = False,
                         marker_show_overlay: bool = True,
-                        marker_show_table: bool = False) -> None:
+                        marker_show_table: bool = False,
+                        marker_overlay_offset: Optional[Tuple[float, float]] = None) -> None:
         """
         Restore markers from saved data.
 
@@ -2079,6 +2119,7 @@ class ChartView(QWidget):
             marker_coupled_mode: Whether markers are in coupled mode
             marker_show_overlay: Whether to show marker overlay
             marker_show_table: Whether to show marker table
+            marker_overlay_offset: Custom position offset for marker overlay (x, y)
         """
         if not markers_dict:
             return
@@ -2095,6 +2136,22 @@ class ChartView(QWidget):
 
             # Import markers (they will have their individual coupled settings)
             self._marker_controller.import_markers_from_dict(markers_dict)
+
+            # Restore marker overlay position if provided
+            if marker_overlay_offset and hasattr(self._marker_controller, 'marker_info_overlay'):
+                overlay = self._marker_controller.marker_info_overlay
+                if overlay:
+                    # Mark as user-positioned FIRST to prevent auto-repositioning
+                    if hasattr(overlay, 'user_positioned'):
+                        overlay.user_positioned = True
+
+                    # Set position with a small delay to ensure it's applied after initialization
+                    from PySide6.QtCore import QPointF, QTimer
+
+                    def set_overlay_position():
+                        overlay.setPos(QPointF(marker_overlay_offset[0], marker_overlay_offset[1]))
+
+                    QTimer.singleShot(100, set_overlay_position)
 
             # Set table visibility
             if hasattr(self._marker_controller, 'marker_table'):
@@ -3185,6 +3242,21 @@ class ChartView(QWidget):
         # Set column count if supported (PyQtGraph 0.12.2+)
         if hasattr(self._legend, 'setColumnCount'):
             self._legend.setColumnCount(self._legend_columns)
+
+        # Restore custom position if it was set
+        if self._preserve_legend_position and self._legend_custom_position:
+            from PySide6.QtCore import QPointF, QTimer
+            x, y = self._legend_custom_position
+
+            def apply_position():
+                # Disable automatic anchoring first
+                if hasattr(self._legend, 'anchor'):
+                    self._legend.anchor(itemPos=None, parentPos=None)
+                # Then set position
+                self._legend.setPos(QPointF(x, y))
+
+            # Delay to ensure legend is fully initialized
+            QTimer.singleShot(50, apply_position)
 
         # Apply styling
         self._set_initial_legend_color()
