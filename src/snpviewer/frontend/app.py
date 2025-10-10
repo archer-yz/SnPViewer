@@ -918,13 +918,13 @@ class SnPViewerMainWindow(QMainWindow):
                 if hasattr(widget, '_plot_widget'):
                     # ChartView - export the plot widget
                     exporter = ImageExporter(widget._plot_widget.plotItem)
-                    exporter.parameters()['width'] = 1920  # High resolution
+                    # exporter.parameters()['width'] = 1920  # High resolution
                     exporter.export(str(output_file))
                     exported_count += 1
                 elif hasattr(widget, 'plot_item'):
                     # SmithView - export the plot item
                     exporter = ImageExporter(widget.plot_item)
-                    exporter.parameters()['width'] = 1920
+                    # exporter.parameters()['width'] = 1920
                     exporter.export(str(output_file))
                     exported_count += 1
 
