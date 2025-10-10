@@ -1144,8 +1144,10 @@ class ChartView(QWidget):
 
                     # Write header
                     header = ['Frequency']
-                    for trace_id in self._traces:
-                        header.append(f"{trace_id}_{self._plot_type.value}")
+                    for trace_label in self._trace_id_to_label.values():
+                        header.append(f"{trace_label}_{self._plot_type.value}")
+                    # for trace_id in self._traces:
+                    #     header.append(f"{trace_id}_{self._plot_type.value}")
                     writer.writerow(header)
 
                     # Collect all data

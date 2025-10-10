@@ -514,12 +514,13 @@ class DatasetBrowserPanel(QWidget):
             return
 
         base_dataset_id = dataset_id.split(':')[0]
+        display_name = self.get_display_name(base_dataset_id)
 
         reply = QMessageBox.question(
             self,
             "Remove Dataset",
-            f"Are you sure you want to remove dataset '{base_dataset_id}'?\n\n"
-            f"This will also close any charts using this dataset.",
+            f"Are you sure you want to remove dataset '{display_name}'?\n\n"
+            f"This will also remove any traces in charts using this dataset.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -917,35 +918,6 @@ class ChartsAreaPanel(QWidget):
             self.remove_chart(chart_id)
 
         return traces_removed, charts_affected
-
-    def remove_charts_by_dataset(self, dataset_id: str) -> None:
-        """Remove all charts that use the specified dataset (legacy method)."""
-        charts_to_remove = []
-
-        # First, try using the direct dataset mapping
-        for chart_id, mapped_dataset_id in self._chart_datasets.items():
-            if mapped_dataset_id == dataset_id:
-                charts_to_remove.append(chart_id)
-
-        # Fallback: check chart titles for dataset identification
-        # This handles cases where the mapping might not be available
-        if not charts_to_remove:
-            for chart_id, chart in self._charts.items():
-                # Charts are titled like "Magnitude Chart - filename.s2p"
-                if " - " in chart.title:
-                    # Extract the filename part from the chart title
-                    chart_filename = chart.title.split(" - ", 1)[1]
-                    # If the dataset_id matches the filename or is part of the title
-                    if dataset_id == chart_filename or dataset_id in chart.title:
-                        charts_to_remove.append(chart_id)
-
-        # Remove found charts
-        for chart_id in charts_to_remove:
-            self.remove_chart(chart_id)
-
-        # Show feedback if charts were removed
-        if charts_to_remove:
-            print(f"Removed {len(charts_to_remove)} chart(s) using dataset {dataset_id}")
 
     def clear_all_charts(self) -> None:
         """Clear all charts from the area."""
