@@ -2,12 +2,8 @@
 name = "snpviewer"
 version = "1.0.0"
 description = "Professional RF Touchstone (.sNp) parameter viewer with advanced visualization and analysis capabilities"
-authors = [
-    { name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" },
-]
-maintainers = [
-    { name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" },
-]
+authors = [{ name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" }]
+maintainers = [{ name = "Yunchi Zhang", email = "yunchi.zhang@gmail.com" }]
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
@@ -48,6 +44,7 @@ snpviewer = "snpviewer.frontend.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+export = ["pandas>=2.0.0", "openpyxl>=3.1.0"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
@@ -61,6 +58,4 @@ requires = ["uv_build>=0.8.22,<0.9.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-]
+dev = ["pytest>=8.4.2"]

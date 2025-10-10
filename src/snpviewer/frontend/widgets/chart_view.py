@@ -1210,52 +1210,79 @@ class ChartView(QWidget):
             QMessageBox.information(self, "No Data", "No traces to export.")
             return
 
+        # Get chart title for default filename
+        default_filename = "chart_data.csv"
+        if hasattr(self, '_tab_title') and self._tab_title:
+            # Clean up filename (remove invalid characters)
+            safe_filename = "".join(
+                c if c.isalnum() or c in (' ', '-', '_', '(', ')') else '_'
+                for c in self._tab_title
+            )
+            default_filename = f"{safe_filename}.csv"
+
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Data as CSV",
-            "chart_data.csv",
+            default_filename,
             "CSV Files (*.csv)"
         )
 
         if file_path:
             try:
-                with open(file_path, 'w', newline='') as csvfile:
-                    writer = csv.writer(csvfile)
+                # Get export data using the new method (works for all chart types)
+                export_data = self.get_export_data()
+                if not export_data:
+                    QMessageBox.information(self, "No Data", "No data available to export.")
+                    return
 
-                    # Write header
-                    header = ['Frequency']
-                    for trace_label in self._trace_id_to_label.values():
-                        header.append(f"{trace_label}_{self._plot_type.value}")
-                    # for trace_id in self._traces:
-                    #     header.append(f"{trace_id}_{self._plot_type.value}")
-                    writer.writerow(header)
+                # Prepare data for CSV
+                rows = []
+                headers = ['Frequency (Hz)']
+                x_data_ref = None
+                trace_data_list = []
 
-                    # Collect all data
-                    all_data = {}
-                    for trace_id in self._traces:
-                        trace = self._traces[trace_id]
-                        dataset = self._datasets[trace_id]
-                        plot_data = self._generate_plot_data(trace, dataset)
-                        if plot_data:
-                            all_data[trace_id] = plot_data
+                # First pass: collect all data and build headers
+                for trace_id, (x_data, y_data, label) in export_data.items():
+                    if x_data_ref is None:
+                        x_data_ref = x_data
 
-                    # Write data rows
-                    if all_data:
-                        # Use the first trace's frequency points as reference
-                        first_trace = next(iter(all_data.values()))
-                        for i in range(len(first_trace.x)):
-                            row = [first_trace.x[i]]
-                            for trace_id in self._traces:
-                                if trace_id in all_data and i < len(all_data[trace_id].y):
-                                    row.append(all_data[trace_id].y[i])
-                                else:
-                                    row.append('')
-                            writer.writerow(row)
+                    # Add trace label from _trace_id_to_label to headers
+                    headers.append(label)
+                    trace_data_list.append(y_data)
 
-                QMessageBox.information(self, "Export Complete", f"Data exported to {file_path}")
+                if x_data_ref is not None and len(headers) > 1:
+                    # Build rows
+                    for i in range(len(x_data_ref)):
+                        row = [x_data_ref[i]]
+                        for y_data in trace_data_list:
+                            if y_data is not None and i < len(y_data):
+                                row.append(y_data[i])
+                        rows.append(row)
+
+                    # Write CSV file
+                    with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(headers)
+                        writer.writerows(rows)
+
+                    QMessageBox.information(
+                        self,
+                        "Export Complete",
+                        f"Data exported successfully to:\n{file_path}"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "No Data",
+                        "No valid data found to export."
+                    )
 
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+                QMessageBox.critical(
+                    self,
+                    "Export Error",
+                    f"Failed to export data:\n\n{str(e)}"
+                )
 
     def clear(self) -> None:
         """Clear all traces from the chart."""
@@ -1772,6 +1799,33 @@ class ChartView(QWidget):
                 # and None for dataset object
                 existing_traces[trace_id] = (trace.dataset_id, trace, None)
         return existing_traces
+
+    def get_export_data(self) -> Dict[str, Tuple[np.ndarray, np.ndarray, str]]:
+        """
+        Get exportable data for all traces in the chart.
+
+        Returns:
+            Dictionary mapping trace_id to (x_data, y_data, label) tuples.
+            Works for all chart types including linear phase error and phase difference.
+        """
+        export_data = {}
+
+        for trace_id in self._traces.keys():
+            if trace_id in self._plot_items:
+                plot_item = self._plot_items[trace_id]
+                x_data = plot_item.xData
+                y_data = plot_item.yData
+
+                if x_data is not None and y_data is not None:
+                    # Get label from _trace_id_to_label if available, otherwise from trace
+                    label = self._trace_id_to_label.get(trace_id, None)
+                    if label is None:
+                        trace = self._traces.get(trace_id)
+                        label = trace.label if trace and hasattr(trace, 'label') else trace_id
+
+                    export_data[trace_id] = (x_data, y_data, label)
+
+        return export_data
 
     def _show_add_traces_dialog(self) -> None:
         """Show dialog to add new traces to the chart."""

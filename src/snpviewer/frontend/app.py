@@ -20,7 +20,8 @@ from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                                QFileDialog, QLabel, QListWidget, QMainWindow,
-                               QMessageBox, QProgressBar, QVBoxLayout, QWidget)
+                               QMessageBox, QProgressBar, QPushButton,
+                               QVBoxLayout, QWidget)
 
 import snpviewer.frontend.resources_rc  # noqa: F401
 from snpviewer.backend import parse_touchstone
@@ -826,12 +827,325 @@ class SnPViewerMainWindow(QMainWindow):
 
     def _export(self) -> None:
         """Export charts and data."""
-        # Placeholder for export functionality
-        QMessageBox.information(
+        if not self._current_project:
+            QMessageBox.warning(
+                self,
+                "No Project",
+                "Please create or open a project before exporting."
+            )
+            return
+
+        # Get all charts
+        all_charts = self._main_panels.charts_area.get_all_charts()
+        if not all_charts:
+            QMessageBox.information(
+                self,
+                "No Charts",
+                "There are no charts to export."
+            )
+            return
+
+        # Show export options dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Export Options")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Add export type buttons
+        export_images_btn = QPushButton("Export Charts as Images (PNG)")
+        export_images_btn.clicked.connect(lambda: self._export_charts_as_images(dialog))
+        layout.addWidget(export_images_btn)
+
+        export_excel_btn = QPushButton("Export Chart Data to Excel")
+        export_excel_btn.clicked.connect(lambda: self._export_charts_to_excel(dialog))
+        layout.addWidget(export_excel_btn)
+
+        export_csv_btn = QPushButton("Export Chart Data to CSV Files")
+        export_csv_btn.clicked.connect(lambda: self._export_charts_to_csv(dialog))
+        layout.addWidget(export_csv_btn)
+
+        # Add cancel button
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        dialog.exec()
+
+    def _export_charts_as_images(self, parent_dialog: QDialog) -> None:
+        """Export all charts as PNG images."""
+        try:
+            from pyqtgraph.exporters import ImageExporter
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                "Could not import ImageExporter from pyqtgraph."
+            )
+            return
+
+        # Select output folder
+        folder_path = QFileDialog.getExistingDirectory(
             self,
-            "Export",
-            "Export functionality will be implemented in a future version."
+            "Select Output Folder for Images",
+            str(self._get_last_directory())
         )
+
+        if not folder_path:
+            return
+
+        folder = Path(folder_path)
+        all_charts = self._main_panels.charts_area.get_all_charts()
+        exported_count = 0
+        errors = []
+
+        self._show_progress("Exporting charts as images...", 0)
+
+        for idx, (chart_id, chart_info) in enumerate(all_charts.items()):
+            try:
+                widget = chart_info.get('widget')
+                if not widget:
+                    continue
+
+                # Get chart title and plot type
+                tab_title = widget.get_tab_title() if hasattr(widget, 'get_tab_title') else f"Chart_{chart_id}"
+
+                # Clean up filename (remove invalid characters)
+                safe_filename = "".join(c if c.isalnum() or c in (' ', '-', '_', '(', ')') else '_' for c in tab_title)
+                output_file = folder / f"{safe_filename}.png"
+
+                # Export based on chart type
+                if hasattr(widget, '_plot_widget'):
+                    # ChartView - export the plot widget
+                    exporter = ImageExporter(widget._plot_widget.plotItem)
+                    exporter.parameters()['width'] = 1920  # High resolution
+                    exporter.export(str(output_file))
+                    exported_count += 1
+                elif hasattr(widget, 'plot_item'):
+                    # SmithView - export the plot item
+                    exporter = ImageExporter(widget.plot_item)
+                    exporter.parameters()['width'] = 1920
+                    exporter.export(str(output_file))
+                    exported_count += 1
+
+                # Update progress
+                progress = int((idx + 1) / len(all_charts) * 100)
+                self._show_progress(f"Exporting charts as images... ({idx + 1}/{len(all_charts)})", progress)
+
+            except Exception as e:
+                errors.append(f"{tab_title}: {str(e)}")
+
+        self._hide_progress()
+
+        # Show result
+        if errors:
+            error_msg = "\n".join(errors)
+            QMessageBox.warning(
+                self,
+                "Export Complete with Errors",
+                f"Exported {exported_count} chart(s) successfully.\n\nErrors:\n{error_msg}"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {exported_count} chart(s) to:\n{folder_path}"
+            )
+            parent_dialog.accept()
+
+    def _export_charts_to_excel(self, parent_dialog: QDialog) -> None:
+        """Export all chart data to a single Excel file with multiple sheets."""
+        try:
+            import pandas as pd
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Missing Dependency",
+                "pandas library is required for Excel export.\n\nInstall it with: pip install pandas openpyxl"
+            )
+            return
+
+        # Select output file
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Excel File",
+            str(self._get_last_directory() / "chart_data.xlsx"),
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        all_charts = self._main_panels.charts_area.get_all_charts()
+        exported_count = 0
+        errors = []
+
+        self._show_progress("Exporting charts to Excel...", 0)
+
+        try:
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                for idx, (chart_id, chart_info) in enumerate(all_charts.items()):
+                    try:
+                        widget = chart_info.get('widget')
+                        if not widget or not hasattr(widget, 'get_export_data'):
+                            continue
+
+                        # Get tab title for sheet name
+                        tab_title = widget.get_tab_title() if hasattr(widget, 'get_tab_title') else f"Chart_{chart_id}"
+
+                        # Excel sheet names are limited to 31 characters and can't contain certain characters
+                        safe_sheet_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in tab_title)
+                        safe_sheet_name = safe_sheet_name[:31]
+
+                        # Get export data using the new method
+                        export_data = widget.get_export_data()
+                        if not export_data:
+                            continue
+
+                        # Prepare data dictionary for DataFrame
+                        data = {}
+
+                        for trace_id, (x_data, y_data, label) in export_data.items():
+                            # Use first trace's x-data as frequency column
+                            # (assuming all traces share same x-axis)
+                            if 'Frequency (Hz)' not in data:
+                                data['Frequency (Hz)'] = x_data
+
+                            # Add trace data with label from _trace_id_to_label
+                            data[label] = y_data
+
+                        if data:
+                            df = pd.DataFrame(data)
+                            df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+                            exported_count += 1
+
+                        # Update progress
+                        progress = int((idx + 1) / len(all_charts) * 100)
+                        self._show_progress(f"Exporting charts to Excel... ({idx + 1}/{len(all_charts)})", progress)
+
+                    except Exception as e:
+                        errors.append(f"{tab_title}: {str(e)}")
+
+            self._hide_progress()
+
+            # Show result
+            if errors:
+                error_msg = "\n".join(errors)
+                QMessageBox.warning(
+                    self,
+                    "Export Complete with Errors",
+                    f"Exported {exported_count} chart(s) successfully to Excel.\n\nErrors:\n{error_msg}"
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Export Complete",
+                    f"Successfully exported {exported_count} chart(s) to:\n{file_path}"
+                )
+                parent_dialog.accept()
+
+        except Exception as e:
+            self._hide_progress()
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export to Excel:\n\n{str(e)}"
+            )
+
+    def _export_charts_to_csv(self, parent_dialog: QDialog) -> None:
+        """Export all chart data to separate CSV files."""
+        # Select output folder
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Output Folder for CSV Files",
+            str(self._get_last_directory())
+        )
+
+        if not folder_path:
+            return
+
+        folder = Path(folder_path)
+        all_charts = self._main_panels.charts_area.get_all_charts()
+        exported_count = 0
+        errors = []
+
+        self._show_progress("Exporting charts to CSV...", 0)
+
+        for idx, (chart_id, chart_info) in enumerate(all_charts.items()):
+            try:
+                widget = chart_info.get('widget')
+                if not widget or not hasattr(widget, 'get_export_data'):
+                    continue
+
+                # Get tab title for filename
+                tab_title = widget.get_tab_title() if hasattr(widget, 'get_tab_title') else f"Chart_{chart_id}"
+
+                # Clean up filename
+                safe_filename = "".join(c if c.isalnum() or c in (' ', '-', '_', '(', ')') else '_' for c in tab_title)
+                output_file = folder / f"{safe_filename}.csv"
+
+                # Get export data using the new method
+                export_data = widget.get_export_data()
+                if not export_data:
+                    continue
+
+                # Prepare data for CSV
+                rows = []
+                headers = ['Frequency (Hz)']
+                x_data_ref = None
+                trace_data_list = []
+
+                # First pass: collect all data and build headers
+                for trace_id, (x_data, y_data, label) in export_data.items():
+                    if x_data_ref is None:
+                        x_data_ref = x_data
+
+                    # Add trace label from _trace_id_to_label to headers
+                    headers.append(label)
+                    trace_data_list.append(y_data)
+
+                if x_data_ref is not None and len(headers) > 1:
+                    # Build rows
+                    for i in range(len(x_data_ref)):
+                        row = [x_data_ref[i]]
+                        for y_data in trace_data_list:
+                            if y_data is not None and i < len(y_data):
+                                row.append(y_data[i])
+                        rows.append(row)
+
+                    # Write CSV file
+                    with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                        import csv
+                        writer = csv.writer(f)
+                        writer.writerow(headers)
+                        writer.writerows(rows)
+
+                    exported_count += 1
+
+                # Update progress
+                progress = int((idx + 1) / len(all_charts) * 100)
+                self._show_progress(f"Exporting charts to CSV... ({idx + 1}/{len(all_charts)})", progress)
+
+            except Exception as e:
+                errors.append(f"{tab_title}: {str(e)}")
+
+        self._hide_progress()
+
+        # Show result
+        if errors:
+            error_msg = "\n".join(errors)
+            QMessageBox.warning(
+                self,
+                "Export Complete with Errors",
+                f"Exported {exported_count} chart(s) successfully to CSV.\n\nErrors:\n{error_msg}"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {exported_count} chart(s) to:\n{folder_path}"
+            )
+            parent_dialog.accept()
 
     # UI State Management
     def _enable_project_actions(self, enabled: bool) -> None:
