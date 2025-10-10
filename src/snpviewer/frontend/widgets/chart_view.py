@@ -19,9 +19,10 @@ from PySide6.QtGui import QAction, QColor, QContextMenuEvent, QFont, QCursor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QFileDialog, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QLabel, QLineEdit,
-                               QMenu, QMessageBox, QPushButton, QSizePolicy,
-                               QSpinBox, QTableWidget, QTableWidgetItem,
-                               QTabWidget, QVBoxLayout, QWidget)
+                               QMenu, QMessageBox, QPushButton,
+                               QSizePolicy, QSpinBox, QTableWidget,
+                               QTableWidgetItem, QTabWidget, QVBoxLayout,
+                               QWidget, QWidgetAction)
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
@@ -34,7 +35,7 @@ from snpviewer.frontend.dialogs.linear_phase_error import \
 from snpviewer.frontend.plotting.plot_pipelines import (
     PlotData, PlotType, convert_s_to_phase, get_frequency_array,
     prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data,
-    unwrap_phase)
+    unwrap_phase, downsample_trace_data)
 from snpviewer.frontend.widgets.markers import MarkerController
 
 
@@ -98,6 +99,12 @@ class ChartView(QWidget):
         self._marker_controller: Optional[MarkerController] = None
         self._markers_visible = False
         self._add_marker_mode = False  # Click-to-add marker mode
+
+        # Downsampling settings
+        self._downsample_enabled = False
+        self._downsample_mode = 'subsample'  # 'subsample', 'mean', or 'peak'
+        self._downsample_factor = 10  # Keep 1 of every N points (decimation factor)
+        self._original_plot_data: Dict[str, PlotData] = {}  # Store original data for mode switching
 
         # Setup UI
         self._setup_ui()
@@ -263,6 +270,64 @@ class ChartView(QWidget):
         self._group_delay_action.setCheckable(True)
         self._group_delay_action.triggered.connect(lambda: self.set_plot_type(PlotType.GROUP_DELAY))
         plot_type_menu.addAction(self._group_delay_action)
+
+        self._context_menu.addSeparator()
+
+        # Downsampling menu
+        downsample_menu = self._context_menu.addMenu("Downsampling")
+
+        self._downsample_enabled_action = QAction("Enable Downsampling", self)
+        self._downsample_enabled_action.setCheckable(True)
+        self._downsample_enabled_action.setChecked(False)
+        self._downsample_enabled_action.triggered.connect(self._toggle_downsampling)
+        downsample_menu.addAction(self._downsample_enabled_action)
+
+        downsample_menu.addSeparator()
+
+        # Downsampling mode submenu
+        downsample_mode_menu = downsample_menu.addMenu("Mode")
+
+        self._downsample_subsample_action = QAction("Subsample (Fast)", self)
+        self._downsample_subsample_action.setCheckable(True)
+        self._downsample_subsample_action.setChecked(True)
+        self._downsample_subsample_action.triggered.connect(lambda: self._set_downsample_mode('subsample'))
+        downsample_mode_menu.addAction(self._downsample_subsample_action)
+
+        self._downsample_mean_action = QAction("Mean (Smooth)", self)
+        self._downsample_mean_action.setCheckable(True)
+        self._downsample_mean_action.triggered.connect(lambda: self._set_downsample_mode('mean'))
+        downsample_mode_menu.addAction(self._downsample_mean_action)
+
+        self._downsample_peak_action = QAction("Peak (Preserve Features)", self)
+        self._downsample_peak_action.setCheckable(True)
+        self._downsample_peak_action.triggered.connect(lambda: self._set_downsample_mode('peak'))
+        downsample_mode_menu.addAction(self._downsample_peak_action)
+
+        downsample_menu.addSeparator()
+
+        # Decimation factor with spinbox in menu
+        factor_widget_action = downsample_menu.addAction("Decimation Factor (1 of every N):")
+        factor_widget_action.setEnabled(False)  # Make it a label
+
+        # Create a widget for the spinbox
+        factor_widget = QWidget()
+        factor_layout = QHBoxLayout(factor_widget)
+        factor_layout.setContentsMargins(10, 2, 10, 2)
+
+        factor_label = QLabel("    N = ")
+        self._downsample_factor_spinbox = QSpinBox()
+        self._downsample_factor_spinbox.setRange(1, 1000)
+        self._downsample_factor_spinbox.setValue(self._downsample_factor)
+        self._downsample_factor_spinbox.setMinimumWidth(80)
+        self._downsample_factor_spinbox.valueChanged.connect(self._on_downsample_factor_changed)
+
+        factor_layout.addWidget(factor_label)
+        factor_layout.addWidget(self._downsample_factor_spinbox)
+        factor_layout.addStretch()
+
+        factor_widget_action = QWidgetAction(self)
+        factor_widget_action.setDefaultWidget(factor_widget)
+        downsample_menu.addAction(factor_widget_action)
 
         self._context_menu.addSeparator()
 
@@ -822,6 +887,17 @@ class ChartView(QWidget):
         plot_data = self._generate_plot_data(trace, dataset)
 
         if plot_data is not None:
+            # Store original plot data
+            self._original_plot_data[trace_id] = plot_data
+
+            # Apply downsampling if enabled
+            if self._downsample_enabled:
+                plot_data = downsample_trace_data(
+                    plot_data,
+                    mode=self._downsample_mode,
+                    decimation_factor=self._downsample_factor
+                )
+
             # Store mapping for marker trace identification
             self._trace_id_to_label[trace_id] = plot_data.label
 
@@ -864,9 +940,9 @@ class ChartView(QWidget):
             # Update legend layout if using multiple columns
             # self._update_legend_layout()
 
-            # Update marker controller with actual plotted data
+            # Update marker controller with downsampled plotted data
             if self._marker_controller is not None:
-                # Pass the actual X,Y data being plotted (e.g., freq vs dB magnitude)
+                # Pass the actual X,Y data being plotted (potentially downsampled)
                 self._marker_controller.add_trace_data(
                     trace_id=plot_data.label,  # Use label as trace ID for display
                     frequency=plot_data.x,     # X-axis data (frequency)
@@ -921,6 +997,10 @@ class ChartView(QWidget):
         # Remove from label mapping
         if trace_id in self._trace_id_to_label:
             del self._trace_id_to_label[trace_id]
+
+        # Remove original plot data
+        if trace_id in self._original_plot_data:
+            del self._original_plot_data[trace_id]
 
         # Update legend layout if using multiple columns
         # self._update_legend_layout()
@@ -1293,6 +1373,40 @@ class ChartView(QWidget):
         if self._plot_type == PlotType.PHASE:
             self._refresh_all_traces()
 
+    def _toggle_downsampling(self) -> None:
+        """Toggle downsampling on/off and refresh all traces."""
+        self._downsample_enabled = self._downsample_enabled_action.isChecked()
+        self._refresh_all_traces()
+        self.properties_changed.emit()
+
+    def _set_downsample_mode(self, mode: str) -> None:
+        """
+        Set the downsampling mode and refresh traces.
+
+        Args:
+            mode: Downsampling mode ('subsample', 'mean', or 'peak')
+        """
+        self._downsample_mode = mode
+
+        # Update checkmarks
+        self._downsample_subsample_action.setChecked(mode == 'subsample')
+        self._downsample_mean_action.setChecked(mode == 'mean')
+        self._downsample_peak_action.setChecked(mode == 'peak')
+
+        # Only refresh if downsampling is enabled
+        if self._downsample_enabled:
+            self._refresh_all_traces()
+            self.properties_changed.emit()
+
+    def _on_downsample_factor_changed(self, value: int) -> None:
+        """Handle decimation factor change from spinbox."""
+        if value != self._downsample_factor:
+            self._downsample_factor = value
+            # Only refresh if downsampling is enabled
+            if self._downsample_enabled:
+                self._refresh_all_traces()
+                self.properties_changed.emit()
+
     def _show_linear_phase_error_dialog(self) -> None:
         """Show the linear phase error analysis dialog."""
         if not self._datasets:
@@ -1383,7 +1497,7 @@ class ChartView(QWidget):
             elif isinstance(saved_style, dict):
                 # Reconstruct TraceStyle from dictionary
                 style = TraceStyle(
-                    color=saved_style.get('color', '#00AA00'),
+                    color=saved_style.get('color', '#ff0000'),
                     line_width=saved_style.get('line_width', 2),
                     line_style=saved_style.get('line_style', 'solid'),
                     marker_style=saved_style.get('marker_style', 'none'),
@@ -1393,7 +1507,7 @@ class ChartView(QWidget):
             else:
                 # Fallback to default
                 style = TraceStyle(
-                    color='#00AA00',
+                    color='#ff0000',  # Red
                     line_width=2,
                     line_style='solid',
                     marker_style='none'
@@ -1401,7 +1515,7 @@ class ChartView(QWidget):
         else:
             # Default style for linear phase error
             style = TraceStyle(
-                color='#00AA00',  # Green
+                color='#ff0000',  # Red
                 line_width=2,
                 line_style='solid',
                 marker_style='none'
@@ -2033,6 +2147,39 @@ class ChartView(QWidget):
             self._apply_plot_area_settings(self._plot_area_settings)
         except Exception as e:
             print(f"Warning: Could not apply restored plot area settings: {e}")
+
+    def get_downsample_settings(self) -> Dict[str, Any]:
+        """Get downsampling settings for serialization."""
+        return {
+            'enabled': self._downsample_enabled,
+            'mode': self._downsample_mode,
+            'decimation_factor': self._downsample_factor
+        }
+
+    def restore_downsample_settings(self, settings_data: Dict[str, Any]) -> None:
+        """Restore downsampling settings from saved data."""
+        if not settings_data:
+            return
+
+        self._downsample_enabled = settings_data.get('enabled', False)
+        self._downsample_mode = settings_data.get('mode', 'subsample')
+        # Support both old (target_points) and new (decimation_factor) formats
+        self._downsample_factor = settings_data.get('decimation_factor',
+                                                    settings_data.get('target_points', 10))
+
+        # Update UI checkboxes
+        self._downsample_enabled_action.setChecked(self._downsample_enabled)
+        self._downsample_subsample_action.setChecked(self._downsample_mode == 'subsample')
+        self._downsample_mean_action.setChecked(self._downsample_mode == 'mean')
+        self._downsample_peak_action.setChecked(self._downsample_mode == 'peak')
+
+        # Update spinbox value
+        if hasattr(self, '_downsample_factor_spinbox'):
+            self._downsample_factor_spinbox.setValue(self._downsample_factor)
+
+        # Refresh traces to apply downsampling if enabled
+        if self._downsample_enabled and self._traces:
+            self._refresh_all_traces()
 
     def get_axis_ranges(self) -> Dict[str, Any]:
         """Get current axis ranges for serialization."""
@@ -3814,16 +3961,19 @@ class ChartView(QWidget):
             # Populate marker controller with existing trace data
             for trace_id, trace in self._traces.items():
                 if trace_id in self._datasets:
-                    # Regular traces with datasets
-                    dataset = self._datasets[trace_id]
-                    plot_data = self._generate_plot_data(trace, dataset)
-                    if plot_data is not None:
-                        self._marker_controller.add_trace_data(
-                            trace_id=plot_data.label,
-                            frequency=plot_data.x,
-                            x_data=plot_data.x,
-                            y_data=plot_data.y
-                        )
+                    # Get the plotted data (which may be downsampled) from the plot item
+                    if trace_id in self._plot_items:
+                        plot_item = self._plot_items[trace_id]
+                        x_data = plot_item.xData
+                        y_data = plot_item.yData
+                        trace_label = self._trace_id_to_label.get(trace_id, trace.label)
+                        if x_data is not None and y_data is not None:
+                            self._marker_controller.add_trace_data(
+                                trace_id=trace_label,
+                                frequency=x_data,
+                                x_data=x_data,
+                                y_data=y_data
+                            )
                 elif trace.metric in ["linear_phase_error", "phase_difference"]:
                     # Special plots (linear phase error, phase difference)
                     # These plots already added their data during creation if marker controller existed

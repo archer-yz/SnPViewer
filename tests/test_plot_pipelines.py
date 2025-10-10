@@ -18,7 +18,8 @@ from snpviewer.frontend.plotting.plot_pipelines import (
     compute_group_delay,
     _extract_s_parameter,
     PlotData,
-    PlotType
+    PlotType,
+    downsample_trace_data
 )
 
 
@@ -242,3 +243,112 @@ class TestTraceParameterExtraction:
 
         with pytest.raises(IndexError, match="Port path .* exceeds matrix size"):
             _extract_s_parameter(s_params, trace)
+
+
+class TestDownsampling:
+    """Test downsampling functionality."""
+
+    def test_subsample_mode(self):
+        """Test subsample downsampling mode."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        downsampled = downsample_trace_data(plot_data, mode='subsample', target_points=100)
+
+        # Should have approximately 100 points
+        assert len(downsampled.x) <= 100
+        assert len(downsampled.y) <= 100
+        # All points should be from the original data
+        for dx in downsampled.x:
+            assert dx in x
+
+    def test_mean_mode(self):
+        """Test mean downsampling mode."""
+        x = np.linspace(0, 10, 1000)
+        y = np.ones_like(x) * 5.0  # Constant value
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        downsampled = downsample_trace_data(plot_data, mode='mean', target_points=100)
+
+        # Should have approximately 100 points
+        assert len(downsampled.x) <= 100
+        assert len(downsampled.y) <= 100
+        # All y values should still be close to 5.0 (mean of constant)
+        np.testing.assert_array_almost_equal(downsampled.y, 5.0, decimal=5)
+
+    def test_peak_mode_preserves_extrema(self):
+        """Test that peak mode preserves min/max values."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        downsampled = downsample_trace_data(plot_data, mode='peak', target_points=100)
+
+        # Peak mode returns up to 2x target points (min and max per bin)
+        assert len(downsampled.x) <= 200
+        assert len(downsampled.y) <= 200
+        # Min and max should be preserved (approximately)
+        assert abs(np.min(downsampled.y) - np.min(y)) < 0.1
+        assert abs(np.max(downsampled.y) - np.max(y)) < 0.1
+
+    def test_no_downsampling_when_below_target(self):
+        """Test that data is not upsampled when already below target."""
+        x = np.linspace(0, 10, 50)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        downsampled = downsample_trace_data(plot_data, mode='subsample', target_points=100)
+
+        # Should return original data unchanged
+        np.testing.assert_array_equal(downsampled.x, x)
+        np.testing.assert_array_equal(downsampled.y, y)
+
+    def test_label_preservation(self):
+        """Test that label is preserved during downsampling."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        original_label = "S11 Magnitude"
+        plot_data = PlotData(x=x, y=y, label=original_label, plot_type=PlotType.MAGNITUDE)
+
+        downsampled = downsample_trace_data(plot_data, mode='subsample', target_points=100)
+
+        assert downsampled.label == original_label
+
+    def test_plot_type_preservation(self):
+        """Test that plot type is preserved during downsampling."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.PHASE)
+
+        downsampled = downsample_trace_data(plot_data, mode='mean', target_points=100)
+
+        assert downsampled.plot_type == PlotType.PHASE
+
+    def test_decimation_factor(self):
+        """Test downsampling with decimation factor instead of target points."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        # Keep 1 of every 10 points (decimation factor = 10)
+        downsampled = downsample_trace_data(plot_data, mode='subsample', decimation_factor=10)
+
+        # Should have approximately 1000 / 10 = 100 points
+        assert len(downsampled.x) <= 100
+        assert len(downsampled.y) <= 100
+
+    def test_decimation_factor_vs_target_points(self):
+        """Test that decimation_factor and target_points produce similar results."""
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        # Using target_points
+        downsampled_target = downsample_trace_data(plot_data, mode='subsample', target_points=100)
+
+        # Using decimation_factor (1000 / 10 = 100)
+        downsampled_factor = downsample_trace_data(plot_data, mode='subsample', decimation_factor=10)
+
+        # Should produce similar results
+        assert len(downsampled_target.x) == len(downsampled_factor.x)

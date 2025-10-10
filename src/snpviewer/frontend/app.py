@@ -689,6 +689,9 @@ class SnPViewerMainWindow(QMainWindow):
                         chart.chart_colors = chart_widget.get_chart_colors()
                     if hasattr(chart_widget, 'get_plot_area_settings'):
                         chart.plot_area_settings = chart_widget.get_plot_area_settings()
+                    # Update downsampling settings
+                    if hasattr(chart_widget, 'get_downsample_settings'):
+                        chart.downsample_settings = chart_widget.get_downsample_settings()
                     # Update phase unwrap setting
                     if hasattr(chart_widget, 'get_phase_unwrap'):
                         chart.phase_unwrap = chart_widget.get_phase_unwrap()
@@ -2207,6 +2210,10 @@ class SnPViewerMainWindow(QMainWindow):
                                 chart_widget.restore_chart_colors(chart.chart_colors)
                             if hasattr(chart, 'plot_area_settings') and chart.plot_area_settings:
                                 chart_widget.restore_plot_area_settings(chart.plot_area_settings)
+                            # Restore downsampling settings
+                            if hasattr(chart, 'downsample_settings') and chart.downsample_settings:
+                                if hasattr(chart_widget, 'restore_downsample_settings'):
+                                    chart_widget.restore_downsample_settings(chart.downsample_settings)
                             # Restore phase unwrap setting
                             if hasattr(chart, 'phase_unwrap') and hasattr(chart_widget, 'restore_phase_unwrap'):
                                 chart_widget.restore_phase_unwrap(chart.phase_unwrap)

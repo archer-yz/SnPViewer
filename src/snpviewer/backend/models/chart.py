@@ -151,6 +151,7 @@ class Chart:
     marker_show_table: bool = False  # Whether marker table is shown
     marker_overlay_offset_x: Optional[float] = None  # Custom X offset for marker overlay position
     marker_overlay_offset_y: Optional[float] = None  # Custom Y offset for marker overlay position
+    downsample_settings: Dict[str, Any] = field(default_factory=dict)  # Downsampling configuration
 
     def __post_init__(self) -> None:
         """Post-initialization to set default axes if not provided."""
@@ -376,7 +377,8 @@ class Chart:
             'marker_show_overlay': self.marker_show_overlay,
             'marker_show_table': self.marker_show_table,
             'marker_overlay_offset_x': self.marker_overlay_offset_x,
-            'marker_overlay_offset_y': self.marker_overlay_offset_y
+            'marker_overlay_offset_y': self.marker_overlay_offset_y,
+            'downsample_settings': self.downsample_settings
         }
 
     @classmethod
@@ -425,5 +427,6 @@ class Chart:
             marker_show_overlay=data.get('marker_show_overlay', True),
             marker_show_table=data.get('marker_show_table', False),
             marker_overlay_offset_x=data.get('marker_overlay_offset_x'),
-            marker_overlay_offset_y=data.get('marker_overlay_offset_y')
+            marker_overlay_offset_y=data.get('marker_overlay_offset_y'),
+            downsample_settings=data.get('downsample_settings', {})
         )

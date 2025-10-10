@@ -469,3 +469,127 @@ def decimate_trace_data(plot_data: PlotData, max_points: int) -> PlotData:
         units_x=plot_data.units_x,
         units_y=plot_data.units_y
     )
+
+
+def downsample_trace_data(plot_data: PlotData, target_points: int = None,
+                          decimation_factor: int = None, mode: str = 'subsample') -> PlotData:
+    """
+    Downsample trace data using specified mode (replicates PyQtGraph's downsampling).
+
+    Supported modes:
+    - 'subsample': Take every Nth point (fastest, may miss features)
+    - 'mean': Average points in each bin (smooth, good for noisy data)
+    - 'peak': Keep min and max in each bin (preserves peaks and valleys)
+
+    Args:
+        plot_data: Original plot data
+        target_points: Target number of points after downsampling (alternative to decimation_factor)
+        decimation_factor: Keep 1 of every N points (alternative to target_points)
+        mode: Downsampling mode ('subsample', 'mean', or 'peak')
+
+    Returns:
+        New PlotData with downsampled data
+    """
+    n_points = len(plot_data.x)
+
+    # Determine effective target_points
+    if decimation_factor is not None and decimation_factor > 1:
+        # Convert decimation factor to target points
+        effective_target = n_points // decimation_factor
+    elif target_points is not None:
+        effective_target = target_points
+    else:
+        # No downsampling
+        return plot_data
+
+    # No downsampling needed
+    if n_points <= effective_target or effective_target <= 0:
+        return plot_data
+
+    if mode == 'subsample':
+        # Subsample: take every Nth point
+        step = n_points // effective_target
+        if step < 1:
+            step = 1
+        indices = np.arange(0, n_points, step)
+
+        return PlotData(
+            x=plot_data.x[indices],
+            y=plot_data.y[indices],
+            plot_type=plot_data.plot_type,
+            label=plot_data.label,
+            units_x=plot_data.units_x,
+            units_y=plot_data.units_y
+        )
+
+    elif mode == 'mean':
+        # Mean: average points in each bin
+        bin_size = n_points // effective_target
+        if bin_size < 1:
+            bin_size = 1
+
+        # Calculate how many complete bins we can make
+        n_bins = n_points // bin_size
+
+        # Reshape and calculate means
+        # Trim data to fit evenly into bins
+        trim_size = n_bins * bin_size
+        x_trimmed = plot_data.x[:trim_size].reshape(n_bins, bin_size)
+        y_trimmed = plot_data.y[:trim_size].reshape(n_bins, bin_size)
+
+        x_downsampled = np.mean(x_trimmed, axis=1)
+        y_downsampled = np.mean(y_trimmed, axis=1)
+
+        return PlotData(
+            x=x_downsampled,
+            y=y_downsampled,
+            plot_type=plot_data.plot_type,
+            label=plot_data.label,
+            units_x=plot_data.units_x,
+            units_y=plot_data.units_y
+        )
+
+    elif mode == 'peak':
+        # Peak: keep both min and max in each bin to preserve peaks and valleys
+        bin_size = n_points // effective_target
+        if bin_size < 1:
+            bin_size = 1
+
+        # Calculate how many complete bins we can make
+        n_bins = n_points // bin_size
+
+        x_downsampled = []
+        y_downsampled = []
+
+        for i in range(n_bins):
+            start_idx = i * bin_size
+            end_idx = start_idx + bin_size
+
+            x_bin = plot_data.x[start_idx:end_idx]
+            y_bin = plot_data.y[start_idx:end_idx]
+
+            if len(y_bin) > 0:
+                # Find min and max indices in this bin
+                min_idx = np.argmin(y_bin)
+                max_idx = np.argmax(y_bin)
+
+                # Add points in order (min first, then max, or vice versa based on position)
+                if min_idx < max_idx:
+                    x_downsampled.extend([x_bin[min_idx], x_bin[max_idx]])
+                    y_downsampled.extend([y_bin[min_idx], y_bin[max_idx]])
+                else:
+                    x_downsampled.extend([x_bin[max_idx], x_bin[min_idx]])
+                    y_downsampled.extend([y_bin[max_idx], y_bin[min_idx]])
+
+        return PlotData(
+            x=np.array(x_downsampled),
+            y=np.array(y_downsampled),
+            plot_type=plot_data.plot_type,
+            label=plot_data.label,
+            units_x=plot_data.units_x,
+            units_y=plot_data.units_y
+        )
+
+    else:
+        # Unknown mode, return original
+        return plot_data
