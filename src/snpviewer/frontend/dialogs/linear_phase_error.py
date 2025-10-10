@@ -558,9 +558,9 @@ class LinearPhaseErrorDialog(QDialog):
             'freq_start': self._current_data['freq_start'],
             'freq_end': self._current_data['freq_end'],
             'equation': (
-                f"Phase = {slope:.8e} × f + {intercept:.3f}"
+                f"Fitted Phase = {slope:.8e} × f + {intercept:.3f}"
                 if intercept >= 0
-                else f"Phase = {slope:.8e} × f - {abs(intercept):.3f}"
+                else f"Fitted Phase = {slope:.8e} × f - {abs(intercept):.3f}"
             ),
             'dataset_name': self._current_data['dataset_name']
         }

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QMenu, QMessageBox, QPushButton,
                                QSizePolicy, QSpinBox, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout,
-                               QWidget, QWidgetAction)
+                               QWidget, QWidgetAction, QGraphicsItem)
 
 from snpviewer.backend.models.dataset import Dataset
 from snpviewer.backend.models.trace import PortPath, Trace, TraceStyle
@@ -1603,6 +1603,8 @@ class ChartView(QWidget):
         if equation:
             # Create the equation text item
             equation_item = pg.TextItem(equation, anchor=(0.5, 1), color=style.color)
+            # Use the correct Qt flag for movable items
+            equation_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
             # Add to plot
             self._plot_item.addItem(equation_item)
             # Position at top center under the title
