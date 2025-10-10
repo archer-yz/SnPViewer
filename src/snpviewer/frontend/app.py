@@ -2090,8 +2090,13 @@ class SnPViewerMainWindow(QMainWindow):
                         # Generate user-friendly dataset name from filename (without extension)
                         user_friendly_name = file_path.stem
 
-                        # Create dataset with the correct file path
-                        dataset = touchstone_to_dataset(touchstone_data, str(file_path))
+                        # Create dataset with the saved dataset_id from project
+                        # This preserves the dataset identity even if the file is moved
+                        dataset = touchstone_to_dataset(
+                            touchstone_data,
+                            str(file_path),
+                            dataset_id=dataset_ref.dataset_id
+                        )
 
                         if dataset:
                             # Restore the saved display_name from the project if available

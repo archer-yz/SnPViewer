@@ -505,7 +505,7 @@ def unwrap_phase(phase: np.ndarray, axis: int = 0) -> np.ndarray:
     return np.unwrap(phase, axis=axis)
 
 
-def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None):
+def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None, dataset_id=None):
     """
     Convert TouchstoneData to Dataset format.
 
@@ -513,6 +513,8 @@ def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None):
         touchstone_data: Parsed Touchstone data
         file_path: Original file path
         metadata: Additional metadata to include
+        dataset_id: Optional dataset ID to use (for project loading). If not provided,
+                   a new ID will be generated based on file metadata.
 
     Returns:
         Dataset object with converted data
@@ -546,9 +548,13 @@ def touchstone_to_dataset(touchstone_data, file_path: str, metadata=None):
     else:
         units = 'GHz'
 
+    # Use provided dataset_id or generate a new one
+    if dataset_id is None:
+        dataset_id = Dataset.create_id(file_path, file_size, file_modified)
+
     # Create Dataset with correct field names
     dataset = Dataset(
-        id=Dataset.create_id(file_path, file_size, file_modified),
+        id=dataset_id,
         file_path=file_path,
         file_name=path_obj.name,
         display_name=path_obj.stem,  # Default display name without extension
