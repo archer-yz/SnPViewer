@@ -5,7 +5,11 @@
 [![PyQtGraph](https://img.shields.io/badge/PyQtGraph-Plotting-orange.svg)](https://pyqtgraph.readthedocs.io/)
 [![AI Assisted](https://img.shields.io/badge/AI%20Assisted-GitHub%20Copilot-purple.svg)](https://github.com/features/copilot)
 
-A professional RF Touchstone (.sNp) parameter viewer with advanced visualization and analysis capabilities.
+A professional RF Touchstone (.sNp) parameter viewer with advanced visualization and analysis
+capabilities.
+
+Copyright (c) 2025 SnPViewer Contributors
+Yunchi Zhang (yunchi.zhang@gmail.com)
 
 ## ✨ Features
 
