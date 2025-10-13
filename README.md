@@ -64,7 +64,7 @@ cd SnPViewer
 uv sync
 
 # Optional: Install export dependencies for Excel export functionality
-pip install "snpviewer[export]"
+uv pip install snpviewer[export]
 
 # Run the application
 .venv\Scripts\activate
