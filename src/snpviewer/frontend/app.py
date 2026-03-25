@@ -34,7 +34,8 @@ from snpviewer.frontend.constants import (DEFAULT_LINE_STYLES,
                                           DEFAULT_TRACE_COLORS)
 from snpviewer.frontend.dialogs.add_traces import AddTracesDialog
 from snpviewer.frontend.dialogs.create_chart import CreateChartDialog
-from snpviewer.frontend.dialogs.linear_phase_error import LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.linear_phase_error import \
+    LinearPhaseErrorDialog
 from snpviewer.frontend.dialogs.phase_difference import PhaseDifferenceDialog
 from snpviewer.frontend.dialogs.preferences import PreferencesDialog
 from snpviewer.frontend.dialogs.trace_selection import TraceSelectionDialog
@@ -1254,7 +1255,17 @@ class SnPViewerMainWindow(QMainWindow):
             if chart_type.lower() in ['smith', 'smith_chart']:
                 chart_widget = SmithView()
                 chart_widget.set_dataset(dataset)
-                chart_tab_title = f"Chart{chart_number} (Smith Chart)"
+                # Set tab title with counter and get formatted title with (Smith) suffix
+                chart_widget.set_tab_title(f"Chart{chart_number}")
+                chart_tab_title = chart_widget.get_tab_title()
+
+                # Connect signals for SmithView
+                chart_widget.add_traces_requested.connect(
+                    lambda: self._on_add_traces_requested(chart_widget, chart_type)
+                )
+                chart_widget.properties_changed.connect(
+                    lambda: self._set_modified(True)
+                )
             else:
                 chart_widget = ChartView()
 
@@ -1586,93 +1597,13 @@ class SnPViewerMainWindow(QMainWindow):
             for trace_id, trace in selected_traces:
                 if is_smith_chart:
                     # SmithView uses add_trace(trace, style)
-                    chart_widget.add_trace(trace, trace.style)
+                    chart_widget.add_trace(trace, trace.style, dataset)
                 else:
                     # ChartView uses add_trace(trace_id, trace, dataset)
                     chart_widget.add_trace(trace_id, trace, dataset)
 
         except Exception as e:
             print(f"Warning: Failed to add selected traces: {e}")
-
-    def _add_default_traces(self, chart_widget: ChartView | SmithView, dataset: Dataset, chart_type: str) -> None:
-        """Add default traces to a newly created chart (deprecated - use trace selection dialog)."""
-        try:
-            # Create default traces based on number of ports
-            n_ports = dataset.n_ports
-
-            if chart_type.lower() in ['smith', 'smith_chart']:
-                # For Smith charts, add reflection parameters (S11, S22, etc.)
-                for i in range(min(n_ports, 4)):  # Limit to 4 traces for readability
-                    style = TraceStyle(
-                        color=DEFAULT_TRACE_COLORS[i % len(DEFAULT_TRACE_COLORS)],
-                        line_width=2,
-                        marker_style='none'
-                    )
-                    dataset_id = dataset.id if hasattr(dataset, 'id') else ''
-                    trace = Trace(
-                        id=f"{dataset_id}:S{i+1},{i+1}_smith",
-                        dataset_id=dataset_id,
-                        domain="S",
-                        metric="reflection",
-                        port_path=PortPath(i=i+1, j=i+1),
-                        style=style
-                    )
-                    # SmithView.add_trace(trace, style)
-                    chart_widget.add_trace(trace, style)
-            else:
-                # For Cartesian charts, add magnitude traces
-                trace_count = 0
-
-                # Add reflection parameters (S11, S22, etc.)
-                for i in range(min(n_ports, 2)):  # S11, S22
-                    style = TraceStyle(
-                        color=DEFAULT_TRACE_COLORS[trace_count % len(DEFAULT_TRACE_COLORS)],
-                        line_width=2,
-                        marker_style='none'
-                    )
-                    dataset_id = dataset.id if hasattr(dataset, 'id') else ''
-                    trace_id = f"{dataset_id}:S{i+1},{i+1}_{chart_type}"
-                    trace = Trace(
-                        id=trace_id,
-                        dataset_id=dataset_id,
-                        domain="S",
-                        metric="magnitude_dB" if chart_type.lower() == "magnitude" else chart_type.lower(),
-                        port_path=PortPath(i=i+1, j=i+1),
-                        style=style
-                    )
-                    # ChartView.add_trace(trace_id, trace, dataset)
-                    chart_widget.add_trace(trace_id, trace, dataset)
-                    trace_count += 1
-
-                # Add transmission parameters if 2-port
-                if n_ports >= 2 and trace_count < 4:
-                    for i, j in [(0, 1), (1, 0)]:  # S12, S21
-                        if trace_count >= 4:
-                            break
-                        # Use dashed line for transmission (i != j), solid for reflection (i == j)
-                        line_style = DEFAULT_LINE_STYLES[1] if i != j else DEFAULT_LINE_STYLES[0]
-                        style = TraceStyle(
-                            color=DEFAULT_TRACE_COLORS[trace_count % len(DEFAULT_TRACE_COLORS)],
-                            line_width=2,
-                            line_style=line_style,
-                            marker_style='none'
-                        )
-                        dataset_id = dataset.id if hasattr(dataset, 'id') else ''
-                        trace_id = f"{dataset_id}:S{i+1},{j+1}_{chart_type}"
-                        trace = Trace(
-                            id=trace_id,
-                            dataset_id=dataset_id,
-                            domain="S",
-                            metric="magnitude_dB" if chart_type.lower() == "magnitude" else chart_type.lower(),
-                            port_path=PortPath(i=i+1, j=j+1),
-                            style=style
-                        )
-                        # ChartView.add_trace(trace_id, trace, dataset)
-                        chart_widget.add_trace(trace_id, trace, dataset)
-                        trace_count += 1
-
-        except Exception as e:
-            print(f"Warning: Failed to add default traces: {e}")
 
     def _on_chart_selected(self, chart_id: str) -> None:
         """Handle chart selection in charts area."""
@@ -1817,6 +1748,24 @@ class SnPViewerMainWindow(QMainWindow):
             )
             return
 
+        # Show progress for large numbers of traces
+        trace_count = len(traces_data)
+        if trace_count > 10:
+            from PySide6.QtWidgets import QProgressDialog
+            progress = QProgressDialog(
+                f"Creating chart with {trace_count} traces...",
+                "Cancel",
+                0,
+                trace_count,
+                self
+            )
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
+            QApplication.processEvents()
+        else:
+            progress = None
+
         # Get the next chart number for naming
         chart_number = self._main_panels.charts_area.get_next_chart_number()
         chart_id = str(uuid.uuid4())[:8]  # Short unique ID
@@ -1824,7 +1773,17 @@ class SnPViewerMainWindow(QMainWindow):
         # Create appropriate chart widget based on chart type
         if chart_type.lower() in ['smith', 'smith_chart']:
             chart_widget = SmithView()
-            chart_tab_title = f"Chart{chart_number} (Smith Chart)"
+            # Set a counter-based chart name like ChartView does
+            chart_widget.set_tab_title(f"Chart{chart_number}")
+            chart_tab_title = chart_widget.get_tab_title()  # Gets title with (Smith) suffix
+
+            # Connect signals for SmithView
+            chart_widget.add_traces_requested.connect(
+                lambda: self._on_add_traces_requested(chart_widget, chart_type)
+            )
+            chart_widget.properties_changed.connect(
+                lambda: self._set_modified(True)
+            )
         else:
             chart_widget = ChartView()
 
@@ -1886,8 +1845,22 @@ class SnPViewerMainWindow(QMainWindow):
         # Apply default styling from preferences
         self._apply_default_chart_styling(chart_widget)
 
+        # Disable updates during bulk trace addition for performance
+        if hasattr(chart_widget, 'setUpdatesEnabled'):
+            chart_widget.setUpdatesEnabled(False)
+
         # Add all traces to the chart
-        for trace_id, trace, dataset_id in traces_data:
+        for idx, (trace_id, trace, dataset_id) in enumerate(traces_data):
+            # Update progress if shown
+            if progress:
+                progress.setValue(idx)
+                if progress.wasCanceled():
+                    # Clean up and return if cancelled
+                    self._main_panels.charts_area.remove_chart(chart_id)
+                    self.statusBar().showMessage("Chart creation cancelled")
+                    return
+                QApplication.processEvents()
+
             # Add trace to chart model
             chart.trace_ids.append(trace_id)
 
@@ -1896,11 +1869,20 @@ class SnPViewerMainWindow(QMainWindow):
             if dataset:
                 # Add trace to chart widget
                 if chart_type.lower() in ['smith', 'smith_chart']:
-                    # SmithView uses add_trace(trace, style)
-                    chart_widget.add_trace(trace, trace.style)
+                    # SmithView: add_trace(trace, style, dataset)
+                    chart_widget.add_trace(trace, trace.style, dataset)
                 else:
                     # ChartView uses add_trace(trace_id, trace, dataset)
                     chart_widget.add_trace(trace_id, trace, dataset)
+
+        # Re-enable updates after all traces added
+        if hasattr(chart_widget, 'setUpdatesEnabled'):
+            chart_widget.setUpdatesEnabled(True)
+
+        # Close progress dialog
+        if progress:
+            progress.setValue(trace_count)
+            progress.close()
 
         # Update project if we have one
         if self._current_project:
@@ -2348,8 +2330,11 @@ class SnPViewerMainWindow(QMainWindow):
             else:
                 metric = "magnitude_dB"  # Default
         else:
-            # For SmithView or unknown, default to magnitude
-            metric = "magnitude_dB"
+            # For SmithView or unknown chart type
+            if isinstance(chart_widget, SmithView):
+                metric = "reflection"  # Smith chart uses reflection coefficient
+            else:
+                metric = "magnitude_dB"  # Default for unknown types
 
         # Add the trace to the chart
         if hasattr(chart_widget, 'add_trace'):
@@ -2367,8 +2352,13 @@ class SnPViewerMainWindow(QMainWindow):
                 style=TraceStyle(color=color, line_width=2, marker_style='none')
             )
 
-            # Add the trace
-            chart_widget.add_trace(trace_id, trace, dataset)
+            # Add the trace - SmithView and ChartView have different signatures
+            if isinstance(chart_widget, SmithView):
+                # SmithView: add_trace(trace, style, dataset)
+                chart_widget.add_trace(trace, trace.style, dataset)
+            else:
+                # ChartView: add_trace(trace_id, trace, dataset)
+                chart_widget.add_trace(trace_id, trace, dataset)
 
             # Mark project as modified
             if self._current_project:
@@ -2686,7 +2676,11 @@ class SnPViewerMainWindow(QMainWindow):
                 added_count = 0
                 for trace_id, trace in traces_to_add:
                     dataset = selected_datasets[trace.dataset_id]
-                    chart_widget.add_trace(trace_id, trace, dataset)
+                    # Different signatures for SmithView vs ChartView
+                    if isinstance(chart_widget, SmithView):
+                        chart_widget.add_trace(trace, trace.style, dataset)
+                    else:
+                        chart_widget.add_trace(trace_id, trace, dataset)
                     added_count += 1
 
                 # Update status
@@ -2718,7 +2712,11 @@ class SnPViewerMainWindow(QMainWindow):
             added_count = 0
             for trace_id, trace in traces_to_add:
                 dataset = selected_datasets[trace.dataset_id]
-                chart_widget.add_trace(trace_id, trace, dataset)
+                # Different signatures for SmithView vs ChartView
+                if isinstance(chart_widget, SmithView):
+                    chart_widget.add_trace(trace, trace.style, dataset)
+                else:
+                    chart_widget.add_trace(trace_id, trace, dataset)
                 added_count += 1
 
             # Update status
@@ -3111,7 +3109,7 @@ class SnPViewerMainWindow(QMainWindow):
                 for trace_id, trace, dataset in traces_to_add:
                     if hasattr(chart_widget, 'add_trace'):
                         if chart_type.lower() in ['smith', 'smith_chart']:
-                            chart_widget.add_trace(trace, trace.style)
+                            chart_widget.add_trace(trace, trace.style, dataset)
                         else:
                             chart_widget.add_trace(trace_id, trace, dataset)
         except Exception as e:
