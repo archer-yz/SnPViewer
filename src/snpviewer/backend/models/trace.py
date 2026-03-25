@@ -25,6 +25,8 @@ class TraceStyle:
         marker_size: Marker size in points
         visible: Whether trace is currently visible
         opacity: Trace opacity (0.0 to 1.0)
+        smoothing_enabled: Whether moving-average smoothing is enabled
+        smoothing_percent: Moving-average window as percentage of point count
     """
     color: str = '#1f77b4'  # Default matplotlib blue
     line_style: str = 'solid'
@@ -33,6 +35,8 @@ class TraceStyle:
     marker_size: float = 4.0
     visible: bool = True
     opacity: float = 1.0
+    smoothing_enabled: bool = False
+    smoothing_percent: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert style to dictionary for serialization."""
@@ -43,7 +47,9 @@ class TraceStyle:
             'marker_style': self.marker_style,
             'marker_size': self.marker_size,
             'visible': self.visible,
-            'opacity': self.opacity
+            'opacity': self.opacity,
+            'smoothing_enabled': self.smoothing_enabled,
+            'smoothing_percent': self.smoothing_percent
         }
 
     @classmethod
@@ -56,7 +62,9 @@ class TraceStyle:
             marker_style=data.get('marker_style', 'none'),
             marker_size=data.get('marker_size', 4.0),
             visible=data.get('visible', True),
-            opacity=data.get('opacity', 1.0)
+            opacity=data.get('opacity', 1.0),
+            smoothing_enabled=data.get('smoothing_enabled', False),
+            smoothing_percent=data.get('smoothing_percent', 1.0)
         )
 
 

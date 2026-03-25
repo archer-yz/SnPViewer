@@ -17,6 +17,8 @@ from snpviewer.frontend.plotting.plot_pipelines import (
     unwrap_phase,
     compute_group_delay,
     compute_peak_to_peak_metrics,
+    smooth_trace_moving_average,
+    window_points_from_percent,
     _extract_s_parameter,
     PlotData,
     PlotType,
@@ -372,6 +374,54 @@ class TestDownsampling:
         # Should have approximately 1000 / 10 = 100 points
         assert len(downsampled.x) <= 100
         assert len(downsampled.y) <= 100
+
+
+class TestTraceSmoothing:
+    """Test moving-average smoothing behavior."""
+
+    def test_smoothing_preserves_point_count(self):
+        """Moving-average smoothing should keep the same number of points."""
+        x = np.linspace(0, 10, 501)
+        y = np.sin(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        smoothed = smooth_trace_moving_average(plot_data, window_percent=2.0)
+
+        assert len(smoothed.x) == len(x)
+        assert len(smoothed.y) == len(y)
+
+    def test_smoothing_reduces_noise_variance(self):
+        """Smoothing should reduce high-frequency noise variance."""
+        rng = np.random.default_rng(42)
+        x = np.linspace(0, 4 * np.pi, 1000)
+        y_clean = np.sin(x)
+        y_noisy = y_clean + rng.normal(0, 0.2, size=len(x))
+
+        plot_data = PlotData(x=x, y=y_noisy, label="Noisy", plot_type=PlotType.MAGNITUDE)
+        smoothed = smooth_trace_moving_average(plot_data, window_percent=2.0)
+
+        noisy_err_var = np.var(y_noisy - y_clean)
+        smooth_err_var = np.var(smoothed.y - y_clean)
+
+        assert smooth_err_var < noisy_err_var
+
+    def test_non_positive_percent_is_noop(self):
+        """Non-positive smoothing percentage should return original data."""
+        x = np.linspace(0, 1, 50)
+        y = np.cos(x)
+        plot_data = PlotData(x=x, y=y, label="Test", plot_type=PlotType.MAGNITUDE)
+
+        smoothed = smooth_trace_moving_average(plot_data, window_percent=0.0)
+
+        np.testing.assert_array_equal(smoothed.y, y)
+
+    def test_window_points_from_percent_is_odd_and_clamped(self):
+        """Window size should be odd and constrained by available points."""
+        # Very small percentage still yields a useful odd window.
+        assert window_points_from_percent(1000, 0.05) == 3
+
+        # Large percentage is clamped to data length (odd when needed).
+        assert window_points_from_percent(10, 200.0) == 9
 
     def test_decimation_factor_vs_target_points(self):
         """Test that decimation_factor and target_points produce similar results."""

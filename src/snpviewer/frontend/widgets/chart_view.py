@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QFileDialog, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QMenu, QMessageBox, QPushButton,
-                               QSizePolicy, QSpinBox, QTableWidget,
+                               QSizePolicy, QSpinBox, QDoubleSpinBox, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout,
                                QWidget, QWidgetAction, QGraphicsItem)
 
@@ -36,7 +36,7 @@ from snpviewer.frontend.dialogs.peak_to_peak import PeakToPeakDialog
 from snpviewer.frontend.plotting.plot_pipelines import (
     PlotData, PlotType, convert_s_to_phase, get_frequency_array,
     prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data,
-    unwrap_phase, downsample_trace_data)
+    smooth_trace_moving_average, window_points_from_percent, unwrap_phase, downsample_trace_data)
 from snpviewer.frontend.widgets.markers import MarkerController
 
 
@@ -458,7 +458,7 @@ class ChartView(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("Trace Properties")
         dialog.setModal(True)
-        dialog.resize(380, 250)
+        dialog.resize(420, 300)
 
         layout = QVBoxLayout(dialog)
 
@@ -534,6 +534,30 @@ class ChartView(QWidget):
         width_layout.addStretch()
         props_layout.addLayout(width_layout)
 
+        # Smoothing controls (moving average)
+        smoothing_enable_layout = QHBoxLayout()
+        smoothing_checkbox = QCheckBox("Enable Smoothing (Moving Average)")
+        smoothing_enable_layout.addWidget(smoothing_checkbox)
+        smoothing_enable_layout.addStretch()
+        props_layout.addLayout(smoothing_enable_layout)
+
+        smoothing_percent_layout = QHBoxLayout()
+        smoothing_percent_label = QLabel("Smoothing Window (%):")
+        smoothing_percent_spin = QDoubleSpinBox()
+        smoothing_percent_spin.setDecimals(2)
+        smoothing_percent_spin.setRange(0.1, 50.0)
+        smoothing_percent_spin.setSingleStep(0.1)
+        smoothing_percent_spin.setSuffix(" %")
+        smoothing_percent_spin.setToolTip("Window size as a percentage of trace points")
+        smoothing_percent_layout.addWidget(smoothing_percent_label)
+        smoothing_percent_layout.addWidget(smoothing_percent_spin)
+        smoothing_percent_layout.addStretch()
+        props_layout.addLayout(smoothing_percent_layout)
+
+        smoothing_points_hint = QLabel("Window points: N/A")
+        smoothing_points_hint.setStyleSheet("color: #666;")
+        props_layout.addWidget(smoothing_points_hint)
+
         layout.addWidget(props_group)
 
         # Buttons
@@ -549,6 +573,28 @@ class ChartView(QWidget):
         layout.addLayout(button_layout)
 
         # Update properties when trace selection changes
+        def update_smoothing_points_hint() -> None:
+            current_trace_id = trace_combo.currentData()
+            if not current_trace_id or current_trace_id not in self._traces:
+                smoothing_points_hint.setText("Window points: N/A")
+                return
+
+            if current_trace_id not in self._datasets:
+                smoothing_points_hint.setText("Window points: N/A (special trace)")
+                return
+
+            n_points = 0
+            if current_trace_id in self._plot_items and self._plot_items[current_trace_id].yData is not None:
+                n_points = len(self._plot_items[current_trace_id].yData)
+            elif current_trace_id in self._datasets:
+                dataset = self._datasets[current_trace_id]
+                n_points = len(get_frequency_array(dataset, unit='Hz'))
+                if self._plot_type == PlotType.GROUP_DELAY and n_points > 0:
+                    n_points -= 1
+
+            window_points = window_points_from_percent(n_points, float(smoothing_percent_spin.value()))
+            smoothing_points_hint.setText(f"Window points: {window_points} of {n_points}")
+
         def update_properties():
             current_trace_id = trace_combo.currentData()
             if current_trace_id and current_trace_id in self._traces:
@@ -565,6 +611,23 @@ class ChartView(QWidget):
                 # Update width spin
                 width_spin.setValue(int(trace.style.line_width))
 
+                # Update smoothing controls
+                smoothing_checkbox.setChecked(getattr(trace.style, 'smoothing_enabled', False))
+                smoothing_percent_spin.setValue(float(getattr(trace.style, 'smoothing_percent', 1.0)))
+
+                has_dataset = current_trace_id in self._datasets
+                smoothing_checkbox.setEnabled(has_dataset)
+                smoothing_percent_spin.setEnabled(has_dataset and smoothing_checkbox.isChecked())
+
+                if not has_dataset:
+                    smoothing_checkbox.setToolTip(
+                        "Smoothing is currently available for traces backed by dataset data only"
+                    )
+                else:
+                    smoothing_checkbox.setToolTip("Enable moving-average smoothing")
+
+                update_smoothing_points_hint()
+
         # Color button click handler
         def choose_color():
             current_trace_id = trace_combo.currentData()
@@ -576,6 +639,8 @@ class ChartView(QWidget):
                     color_button.current_color = color.name()
 
         color_button.clicked.connect(choose_color)
+        smoothing_checkbox.toggled.connect(smoothing_percent_spin.setEnabled)
+        smoothing_percent_spin.valueChanged.connect(lambda _: update_smoothing_points_hint())
         trace_combo.currentTextChanged.connect(update_properties)
 
         # Initialize with first trace
@@ -592,9 +657,21 @@ class ChartView(QWidget):
                 trace.style.color = getattr(color_button, 'current_color', trace.style.color)
                 trace.style.line_style = style_combo.currentText()
                 trace.style.line_width = float(width_spin.value())
+                old_smoothing_enabled = getattr(trace.style, 'smoothing_enabled', False)
+                old_smoothing_percent = float(getattr(trace.style, 'smoothing_percent', 1.0))
+                trace.style.smoothing_enabled = smoothing_checkbox.isChecked() and (current_trace_id in self._datasets)
+                trace.style.smoothing_percent = float(smoothing_percent_spin.value())
 
-                # Refresh the plot item with new style
-                self._update_trace_style(current_trace_id)
+                smoothing_changed = (
+                    old_smoothing_enabled != trace.style.smoothing_enabled
+                    or abs(old_smoothing_percent - trace.style.smoothing_percent) > 1e-12
+                )
+
+                # Smoothing changes require data regeneration for dataset-backed traces.
+                if smoothing_changed and current_trace_id in self._datasets:
+                    self._refresh_trace_data(current_trace_id)
+                else:
+                    self._update_trace_style(current_trace_id)
 
         apply_button.clicked.connect(apply_changes)
         ok_button.clicked.connect(lambda: (apply_changes(), dialog.accept()))
@@ -1142,16 +1219,42 @@ class ChartView(QWidget):
         """
         try:
             if self._plot_type == PlotType.MAGNITUDE:
-                return prepare_magnitude_data(trace, dataset)
+                plot_data = prepare_magnitude_data(trace, dataset)
             elif self._plot_type == PlotType.PHASE:
-                return prepare_phase_data(trace, dataset, unwrap=self._phase_unwrap)
+                plot_data = prepare_phase_data(trace, dataset, unwrap=self._phase_unwrap)
             elif self._plot_type == PlotType.GROUP_DELAY:
-                return prepare_group_delay_data(trace, dataset)
+                plot_data = prepare_group_delay_data(trace, dataset)
             else:
                 return None
+
+            if getattr(trace.style, 'smoothing_enabled', False):
+                plot_data = smooth_trace_moving_average(
+                    plot_data,
+                    window_percent=float(getattr(trace.style, 'smoothing_percent', 1.0))
+                )
+
+            return plot_data
         except Exception as e:
             print(f"Warning: Failed to generate plot data for trace {trace.id}: {e}")
             return None
+
+    def _refresh_trace_data(self, trace_id: str) -> None:
+        """Recreate one dataset-backed trace so data processing updates take effect."""
+        if trace_id not in self._traces or trace_id not in self._datasets:
+            return
+
+        trace = self._traces[trace_id]
+        dataset = self._datasets[trace_id]
+        old_label = self._trace_id_to_label.get(trace_id)
+
+        if trace_id in self._plot_items:
+            self._plot_item.removeItem(self._plot_items[trace_id])
+            del self._plot_items[trace_id]
+
+        if self._marker_controller is not None and old_label:
+            self._marker_controller.remove_trace_data(old_label)
+
+        self.add_trace(trace_id, trace, dataset)
 
     def _refresh_all_traces(self) -> None:
         """Refresh all traces with current plot type."""

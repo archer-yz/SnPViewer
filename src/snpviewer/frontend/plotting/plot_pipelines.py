@@ -493,6 +493,58 @@ def interpolate_trace_data(plot_data: PlotData, n_points: int) -> PlotData:
     )
 
 
+def window_points_from_percent(n_points: int, window_percent: float) -> int:
+    """Convert a smoothing percent to a valid odd window size in points."""
+    if n_points < 3 or window_percent <= 0:
+        return 1
+
+    window_points = int(round(n_points * (window_percent / 100.0)))
+    window_points = max(window_points, 3)
+
+    # Use an odd window for symmetric filtering.
+    if window_points % 2 == 0:
+        window_points += 1
+
+    if window_points > n_points:
+        window_points = n_points if n_points % 2 == 1 else n_points - 1
+
+    return max(window_points, 1)
+
+
+def smooth_trace_moving_average(plot_data: PlotData, window_percent: float = 1.0) -> PlotData:
+    """
+    Apply moving-average smoothing to y-data using reflect padding at edges.
+
+    Args:
+        plot_data: Source plot data
+        window_percent: Smoothing window as percentage of sample count
+
+    Returns:
+        PlotData with smoothed y-data and unchanged x-data/metadata
+    """
+    y_data = plot_data.y
+    n_points = len(y_data)
+    window_points = window_points_from_percent(n_points, window_percent)
+
+    if window_points <= 1:
+        return plot_data
+
+    half_window = window_points // 2
+    kernel = np.ones(window_points, dtype=float) / float(window_points)
+
+    y_padded = np.pad(y_data, (half_window, half_window), mode='reflect')
+    y_smoothed = np.convolve(y_padded, kernel, mode='valid')
+
+    return PlotData(
+        x=plot_data.x,
+        y=y_smoothed,
+        plot_type=plot_data.plot_type,
+        label=plot_data.label,
+        units_x=plot_data.units_x,
+        units_y=plot_data.units_y
+    )
+
+
 def decimate_trace_data(plot_data: PlotData, max_points: int) -> PlotData:
     """
     Decimate trace data if it exceeds maximum points.
