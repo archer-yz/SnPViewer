@@ -368,6 +368,10 @@ class ChartView(QWidget):
         self._add_points_limit_action.triggered.connect(self._add_points_limit)
         limit_menu.addAction(self._add_points_limit_action)
 
+        self._add_average_line_action = QAction("Average Over Range...", self)
+        self._add_average_line_action.triggered.connect(self._add_average_line)
+        limit_menu.addAction(self._add_average_line_action)
+
         limit_menu.addSeparator()
 
         # Limit line properties action (moved into limit lines submenu)
@@ -2175,6 +2179,19 @@ class ChartView(QWidget):
                     'show_chart_label': line_info.get('show_chart_label', False),
                     'show_legend': line_info.get('show_legend', True)
                 }
+            elif limit_type == 'average':
+                limit_data[line_id] = {
+                    'type': limit_type,
+                    'trace_id': line_info.get('trace_id'),
+                    'trace_label': line_info.get('trace_label', ''),
+                    'freq_start': line_info.get('freq_start', 0.0),
+                    'freq_stop': line_info.get('freq_stop', 0.0),
+                    'avg_value': line_info.get('avg_value', 0.0),
+                    'label': line_info.get('label', ''),
+                    'color': line_info.get('color', '#1565C0'),
+                    'style': line_info.get('style', 'dash'),
+                    'width': line_info.get('width', 2)
+                }
 
         return limit_data
 
@@ -2207,6 +2224,22 @@ class ChartView(QWidget):
                     line_info.get('show_chart_label', False),
                     line_info.get('show_legend', True)
                 )
+            elif limit_type == 'average':
+                export_data = self.get_export_data()
+                trace_series = {
+                    trace_id: (label, np.asarray(x_data, dtype=float), np.asarray(y_data, dtype=float))
+                    for trace_id, (x_data, y_data, label) in export_data.items()
+                    if x_data is not None and y_data is not None and len(x_data) > 0
+                }
+                created_avg_id = self._create_average_line(
+                    trace_series=trace_series,
+                    trace_id=line_info.get('trace_id', ''),
+                    freq_start=float(line_info.get('freq_start', 0.0)),
+                    freq_stop=float(line_info.get('freq_stop', 0.0))
+                )
+                if created_avg_id is None:
+                    # Skip restoring this average line if its source trace is unavailable.
+                    continue
 
             # Update the stored ID to match saved data (only if ID remapping is needed)
             if line_id not in self._limit_lines:
@@ -2214,6 +2247,8 @@ class ChartView(QWidget):
                 # Need to handle different prefixes based on limit type
                 if limit_type == 'points':
                     last_id = f"points_{self._next_limit_id - 1}"
+                elif limit_type == 'average':
+                    last_id = f"avg_{self._next_limit_id - 1}"
                 elif limit_type in ['frequency_range', 'value_range']:
                     last_id = f"range_{self._next_limit_id - 1}"
                 else:
@@ -3231,6 +3266,274 @@ class ChartView(QWidget):
 
         return points_id
 
+    def _add_average_line(self) -> None:
+        """Add an average-value line over a selected frequency range for one trace."""
+        export_data = self.get_export_data()
+        if not export_data:
+            QMessageBox.information(self, "No Traces", "No traces are currently displayed in this chart.")
+            return
+
+        trace_series = {
+            trace_id: (label, np.asarray(x_data, dtype=float), np.asarray(y_data, dtype=float))
+            for trace_id, (x_data, y_data, label) in export_data.items()
+            if x_data is not None and y_data is not None and len(x_data) > 0
+        }
+        if not trace_series:
+            QMessageBox.information(self, "No Data", "No valid trace data is available.")
+            return
+
+        config = self._show_average_line_dialog(trace_series)
+        if config is None:
+            return
+
+        self._create_average_line(
+            trace_series=trace_series,
+            trace_id=config['trace_id'],
+            freq_start=config['freq_start'],
+            freq_stop=config['freq_stop']
+        )
+
+    def _show_average_line_dialog(self, trace_series: Dict[str, Tuple[str, np.ndarray, np.ndarray]],
+                                  existing: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+        """Prompt for trace and frequency range used to compute an average line."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Average Over Frequency Range")
+        dialog.setModal(True)
+        dialog.resize(420, 180)
+
+        layout = QVBoxLayout(dialog)
+
+        form_layout = QHBoxLayout()
+        form_layout.addWidget(QLabel("Trace:"))
+        trace_combo = QComboBox()
+        for trace_id, (trace_label, _, _) in trace_series.items():
+            trace_combo.addItem(trace_label, trace_id)
+        form_layout.addWidget(trace_combo)
+        layout.addLayout(form_layout)
+
+        start_layout = QHBoxLayout()
+        start_layout.addWidget(QLabel("Start Frequency:"))
+        start_edit = QLineEdit()
+        start_edit.setPlaceholderText("e.g., 1e9 or 1G")
+        start_layout.addWidget(start_edit)
+        layout.addLayout(start_layout)
+
+        stop_layout = QHBoxLayout()
+        stop_layout.addWidget(QLabel("Stop Frequency:"))
+        stop_edit = QLineEdit()
+        stop_edit.setPlaceholderText("e.g., 5e9 or 5G")
+        stop_layout.addWidget(stop_edit)
+        layout.addLayout(stop_layout)
+
+        info_label = QLabel("Values outside the trace range are clamped to available data limits.")
+        info_label.setStyleSheet("color: #666;")
+        layout.addWidget(info_label)
+
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addStretch()
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        def set_range_for_trace(trace_id: str) -> None:
+            if trace_id not in trace_series:
+                return
+            _, x_data, _ = trace_series[trace_id]
+            start_edit.setText(f"{float(np.min(x_data)):.6g}")
+            stop_edit.setText(f"{float(np.max(x_data)):.6g}")
+
+        if existing is not None:
+            idx = trace_combo.findData(existing['trace_id'])
+            if idx >= 0:
+                trace_combo.setCurrentIndex(idx)
+            start_edit.setText(f"{existing['freq_start']:.6g}")
+            stop_edit.setText(f"{existing['freq_stop']:.6g}")
+            trace_combo.setEnabled(False)
+        else:
+            default_trace = trace_combo.currentData()
+            if default_trace:
+                set_range_for_trace(default_trace)
+            trace_combo.currentTextChanged.connect(lambda: set_range_for_trace(trace_combo.currentData()))
+
+        result = {'accepted': False}
+
+        def accept_dialog() -> None:
+            trace_id = trace_combo.currentData()
+            if not trace_id or trace_id not in trace_series:
+                QMessageBox.warning(dialog, "Invalid Trace", "Please select a valid trace.")
+                return
+
+            try:
+                freq_start = self._parse_frequency(start_edit.text().strip())
+                freq_stop = self._parse_frequency(stop_edit.text().strip())
+            except ValueError as e:
+                QMessageBox.warning(dialog, "Invalid Frequency", str(e))
+                return
+
+            if freq_start >= freq_stop:
+                QMessageBox.warning(dialog, "Invalid Range", "Stop frequency must be greater than start frequency.")
+                return
+
+            result['accepted'] = True
+            result['trace_id'] = trace_id
+            result['freq_start'] = float(freq_start)
+            result['freq_stop'] = float(freq_stop)
+            dialog.accept()
+
+        ok_button.clicked.connect(accept_dialog)
+        cancel_button.clicked.connect(dialog.reject)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted or not result.get('accepted', False):
+            return None
+
+        return {
+            'trace_id': result['trace_id'],
+            'freq_start': result['freq_start'],
+            'freq_stop': result['freq_stop']
+        }
+
+    def _create_average_line(self, trace_series: Dict[str, Tuple[str, np.ndarray, np.ndarray]],
+                             trace_id: str, freq_start: float, freq_stop: float) -> Optional[str]:
+        """Create a clickable horizontal average line for the selected trace/range."""
+        if trace_id not in trace_series:
+            QMessageBox.warning(self, "Trace Missing", "Selected trace is no longer available.")
+            return None
+
+        trace_label, x_data, y_data = trace_series[trace_id]
+        data_min = float(np.min(x_data))
+        data_max = float(np.max(x_data))
+        effective_start = max(freq_start, data_min)
+        effective_stop = min(freq_stop, data_max)
+
+        if effective_start >= effective_stop:
+            QMessageBox.warning(self, "No Overlap", "Selected frequency range does not overlap trace data.")
+            return None
+
+        mask = (x_data >= effective_start) & (x_data <= effective_stop)
+        if not np.any(mask):
+            QMessageBox.warning(self, "No Data", "No samples found in the selected frequency range.")
+            return None
+
+        avg_value = float(np.mean(y_data[mask]))
+
+        line_id = f"avg_{self._next_limit_id}"
+        self._next_limit_id += 1
+
+        line_item = self._plot_item.plot(
+            np.array([effective_start, effective_stop]),
+            np.array([avg_value, avg_value]),
+            pen=pg.mkPen('#1565C0', width=2, style=Qt.PenStyle.DashLine),
+            name=None
+        )
+        line_item.curve.setClickable(True, width=10)
+        line_item.sigClicked.connect(
+            lambda plot, event, item=line_item: self._on_average_line_item_clicked(item, event)
+        )
+
+        y_range = self._plot_item.getViewBox().viewRange()[1]
+        y_offset = (y_range[1] - y_range[0]) * 0.02 if y_range[1] != y_range[0] else 0.0
+        label_item = pg.TextItem(
+            text=f"Avg: {avg_value:.6g}",
+            color='#1565C0',
+            anchor=(0.5, 1)
+        )
+        label_item.setPos((effective_start + effective_stop) / 2.0, avg_value + y_offset)
+        self._plot_item.addItem(label_item)
+
+        self._limit_lines[line_id] = {
+            'type': 'average',
+            'trace_id': trace_id,
+            'trace_label': trace_label,
+            'freq_start': effective_start,
+            'freq_stop': effective_stop,
+            'avg_value': avg_value,
+            'label': f"Average: {trace_label}",
+            'color': '#1565C0',
+            'style': 'dash',
+            'width': 2,
+            'item': line_item,
+            'label_item': label_item
+        }
+
+        return line_id
+
+    def _on_average_line_item_clicked(self, line_item, event=None) -> None:
+        """Resolve clicked average line by item reference and open update flow."""
+        del event
+        for line_id, line_data in self._limit_lines.items():
+            if line_data.get('type') == 'average' and line_data.get('item') is line_item:
+                self._on_average_line_clicked(line_id)
+                return
+
+    def _on_average_line_clicked(self, line_id: str, event=None) -> None:
+        """Handle clicks on average lines to edit frequency range and recompute average."""
+        del event
+        if line_id not in self._limit_lines:
+            return
+        line_data = self._limit_lines[line_id]
+        if line_data.get('type') != 'average':
+            return
+
+        export_data = self.get_export_data()
+        trace_series = {
+            trace_id: (label, np.asarray(x_data, dtype=float), np.asarray(y_data, dtype=float))
+            for trace_id, (x_data, y_data, label) in export_data.items()
+            if x_data is not None and y_data is not None and len(x_data) > 0
+        }
+        trace_id = line_data.get('trace_id')
+        if trace_id not in trace_series:
+            QMessageBox.warning(self, "Trace Missing", "The source trace for this average line is no longer present.")
+            return
+
+        updated = self._show_average_line_dialog(
+            trace_series,
+            existing={
+                'trace_id': trace_id,
+                'freq_start': float(line_data.get('freq_start', 0.0)),
+                'freq_stop': float(line_data.get('freq_stop', 0.0))
+            }
+        )
+        if updated is None:
+            return
+
+        trace_label, x_data, y_data = trace_series[trace_id]
+        data_min = float(np.min(x_data))
+        data_max = float(np.max(x_data))
+        effective_start = max(updated['freq_start'], data_min)
+        effective_stop = min(updated['freq_stop'], data_max)
+        if effective_start >= effective_stop:
+            QMessageBox.warning(self, "No Overlap", "Selected frequency range does not overlap trace data.")
+            return
+
+        mask = (x_data >= effective_start) & (x_data <= effective_stop)
+        if not np.any(mask):
+            QMessageBox.warning(self, "No Data", "No samples found in the selected frequency range.")
+            return
+
+        avg_value = float(np.mean(y_data[mask]))
+
+        line_item = line_data.get('item')
+        if line_item and hasattr(line_item, 'setData'):
+            line_item.setData(
+                np.array([effective_start, effective_stop]),
+                np.array([avg_value, avg_value])
+            )
+
+        label_item = line_data.get('label_item')
+        if label_item and hasattr(label_item, 'setText') and hasattr(label_item, 'setPos'):
+            y_range = self._plot_item.getViewBox().viewRange()[1]
+            y_offset = (y_range[1] - y_range[0]) * 0.02 if y_range[1] != y_range[0] else 0.0
+            label_item.setText(f"Avg: {avg_value:.6g}")
+            label_item.setPos((effective_start + effective_stop) / 2.0, avg_value + y_offset)
+
+        line_data['trace_label'] = trace_label
+        line_data['freq_start'] = effective_start
+        line_data['freq_stop'] = effective_stop
+        line_data['avg_value'] = avg_value
+        line_data['label'] = f"Average: {trace_label}"
+
     def _on_trace_clicked(self, trace_id: str, plot_item, event=None) -> None:
         """Handle trace click for selection and properties or marker placement."""
         if self._add_marker_mode:
@@ -3369,6 +3672,15 @@ class ChartView(QWidget):
             curve_item = line_data.get('item')
             if curve_item and hasattr(curve_item, 'setPen'):
                 curve_item.setPen(pen)
+
+        elif line_type == 'average':
+            avg_item = line_data.get('item')
+            if avg_item and hasattr(avg_item, 'setPen'):
+                avg_item.setPen(pen)
+
+            label_item = line_data.get('label_item')
+            if label_item and hasattr(label_item, 'setColor'):
+                label_item.setColor(color)
 
     def _get_limit_pen_style(self, style_name: str):
         """Convert limit line style name to PyQtGraph pen style."""
