@@ -16,6 +16,7 @@ from snpviewer.frontend.plotting.plot_pipelines import (
     convert_s_to_phase,
     unwrap_phase,
     compute_group_delay,
+    compute_peak_to_peak_metrics,
     _extract_s_parameter,
     PlotData,
     PlotType,
@@ -126,6 +127,40 @@ class TestGroupDelayComputation:
 
         # Should be close to expected delay
         np.testing.assert_allclose(group_delay, expected_delay, rtol=0.1)
+
+
+class TestPeakToPeakMetrics:
+    """Test peak-to-peak metric computation in selected frequency ranges."""
+
+    def test_compute_metrics_in_range(self):
+        """Compute min/max and P2P from a bounded frequency range."""
+        freq = np.array([1e9, 2e9, 3e9, 4e9, 5e9])
+        values = np.array([2.0, -1.0, 3.5, 1.0, 0.0])
+
+        metrics = compute_peak_to_peak_metrics(freq, values, 2e9, 4e9)
+
+        assert metrics['min_value'] == -1.0
+        assert metrics['min_frequency'] == 2e9
+        assert metrics['max_value'] == 3.5
+        assert metrics['max_frequency'] == 3e9
+        assert metrics['peak_to_peak'] == 4.5
+        assert metrics['points'] == 3
+
+    def test_rejects_empty_range(self):
+        """Raise when no samples fall in selected range."""
+        freq = np.array([1e9, 2e9, 3e9])
+        values = np.array([1.0, 2.0, 3.0])
+
+        with pytest.raises(ValueError, match="No data points found"):
+            compute_peak_to_peak_metrics(freq, values, 4e9, 5e9)
+
+    def test_rejects_invalid_shape(self):
+        """Raise when frequency/value arrays are mismatched."""
+        freq = np.array([1e9, 2e9, 3e9])
+        values = np.array([1.0, 2.0])
+
+        with pytest.raises(ValueError, match="same shape"):
+            compute_peak_to_peak_metrics(freq, values, 1e9, 3e9)
 
 
 class TestPlotDataClass:

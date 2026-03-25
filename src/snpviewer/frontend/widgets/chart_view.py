@@ -32,6 +32,7 @@ from snpviewer.frontend.dialogs.common_dialogs import (
     FontStylingWidget, PlotAreaPropertiesWidget)
 from snpviewer.frontend.dialogs.linear_phase_error import \
     LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.peak_to_peak import PeakToPeakDialog
 from snpviewer.frontend.plotting.plot_pipelines import (
     PlotData, PlotType, convert_s_to_phase, get_frequency_array,
     prepare_group_delay_data, prepare_magnitude_data, prepare_phase_data,
@@ -386,6 +387,10 @@ class ChartView(QWidget):
         self._trace_properties_action = QAction("Trace Properties...", self)
         self._trace_properties_action.triggered.connect(self._show_trace_selection_dialog)
         self._context_menu.addAction(self._trace_properties_action)
+
+        self._peak_to_peak_action = QAction("Peak-to-Peak Analysis...", self)
+        self._peak_to_peak_action.triggered.connect(self._show_peak_to_peak_dialog)
+        self._context_menu.addAction(self._peak_to_peak_action)
 
         self._context_menu.addSeparator()
 
@@ -1448,6 +1453,30 @@ class ChartView(QWidget):
         dialog = LinearPhaseErrorDialog(self._datasets, parent=self)
         # Connect signal to handle chart creation
         dialog.create_chart_requested.connect(self._handle_linear_phase_error_chart_request)
+        dialog.exec()
+
+    def _show_peak_to_peak_dialog(self) -> None:
+        """Show peak-to-peak analysis dialog for traces in the current chart."""
+        export_data = self.get_export_data()
+        if not export_data:
+            QMessageBox.information(self, "No Traces", "No traces are currently displayed in this chart.")
+            return
+
+        traces_for_analysis = {}
+        for trace_id, (x_data, y_data, label) in export_data.items():
+            if x_data is None or y_data is None:
+                continue
+            traces_for_analysis[trace_id] = (
+                label,
+                np.asarray(x_data, dtype=float),
+                np.asarray(y_data, dtype=float),
+            )
+
+        if not traces_for_analysis:
+            QMessageBox.information(self, "No Data", "No valid trace data is available for analysis.")
+            return
+
+        dialog = PeakToPeakDialog(traces=traces_for_analysis, y_axis_label=self._y_axis_label, parent=self)
         dialog.exec()
 
     def _handle_linear_phase_error_chart_request(self, config: dict) -> None:

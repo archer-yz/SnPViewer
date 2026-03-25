@@ -139,6 +139,59 @@ def compute_group_delay(frequency: np.ndarray, phase: np.ndarray) -> np.ndarray:
     return group_delay
 
 
+def compute_peak_to_peak_metrics(
+    frequency: np.ndarray,
+    values: np.ndarray,
+    freq_start: float,
+    freq_stop: float
+) -> dict:
+    """
+    Compute min/max and peak-to-peak metrics within a frequency range.
+
+    Args:
+        frequency: Frequency array in Hz
+        values: Trace values aligned with frequency array
+        freq_start: Start frequency in Hz (inclusive)
+        freq_stop: Stop frequency in Hz (inclusive)
+
+    Returns:
+        Dictionary containing min/max values and frequencies, peak-to-peak value,
+        and number of points used.
+    """
+    if frequency.shape != values.shape:
+        raise ValueError("Frequency and value arrays must have the same shape")
+
+    if frequency.size == 0:
+        raise ValueError("Frequency/value arrays cannot be empty")
+
+    if freq_start > freq_stop:
+        raise ValueError("Start frequency must be less than or equal to stop frequency")
+
+    mask = (frequency >= freq_start) & (frequency <= freq_stop)
+    if not np.any(mask):
+        raise ValueError("No data points found in the selected frequency range")
+
+    freq_filtered = frequency[mask]
+    values_filtered = values[mask]
+
+    min_idx = int(np.argmin(values_filtered))
+    max_idx = int(np.argmax(values_filtered))
+
+    min_value = float(values_filtered[min_idx])
+    max_value = float(values_filtered[max_idx])
+    min_frequency = float(freq_filtered[min_idx])
+    max_frequency = float(freq_filtered[max_idx])
+
+    return {
+        'min_value': min_value,
+        'min_frequency': min_frequency,
+        'max_value': max_value,
+        'max_frequency': max_frequency,
+        'peak_to_peak': max_value - min_value,
+        'points': int(freq_filtered.size)
+    }
+
+
 def _extract_s_parameter(s_matrix: np.ndarray, trace: Trace) -> np.ndarray:
     """
     Extract specific S-parameter from full matrix based on trace port path.

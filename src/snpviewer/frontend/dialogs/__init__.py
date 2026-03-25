@@ -2,6 +2,7 @@
 
 from snpviewer.frontend.dialogs.linear_phase_error import \
     LinearPhaseErrorDialog
+from snpviewer.frontend.dialogs.peak_to_peak import PeakToPeakDialog
 from snpviewer.frontend.dialogs.phase_difference import PhaseDifferenceDialog
 
-__all__ = ['LinearPhaseErrorDialog', 'PhaseDifferenceDialog']
+__all__ = ['LinearPhaseErrorDialog', 'PhaseDifferenceDialog', 'PeakToPeakDialog']
