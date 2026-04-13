@@ -11,6 +11,8 @@ capabilities.
 Copyright (c) 2025 SnPViewer Contributors
 Yunchi Zhang (yunchi.zhang@gmail.com)
 
+![screenshot](./screenshots/dark_plot.png)
+
 ## ✨ Features
 
 ### 📊 **Chart Types & Visualization**
